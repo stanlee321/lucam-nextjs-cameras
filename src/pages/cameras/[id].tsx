@@ -28,6 +28,7 @@ import {
   Videocam as CameraIcon,
   Home as HomeIcon,
   Delete as DeleteIcon,
+  Edit as EditIcon,
 } from '@mui/icons-material';
 import Link from 'next/link';
 import { cameraService } from '@/services/api';
@@ -86,16 +87,16 @@ export default function EditCameraPage() {
     const { name, value, type, checked } = e.target;
     setCameraData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value,
+      [name]: type === 'checkbox' 
+        ? checked 
+        : name === 'port' 
+          ? value === '' ? '' : Number(value) // Convert port to number, but allow empty string
+          : value,
     }));
     
-    // Clear error when field is changed
+    // Clear errors when typing
     if (errors[name]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[name];
-        return newErrors;
-      });
+      setErrors(prev => ({ ...prev, [name]: '' }));
     }
   };
   
@@ -133,33 +134,51 @@ export default function EditCameraPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!validateForm() || !cameraId) {
+    if (!validateForm()) {
       return;
     }
     
+    setLoading(true);
+    setError(null);
+    
     try {
-      setSaving(true);
+      // Ensure port is a number
+      const cameraToSubmit = {
+        ...cameraData,
+        port: typeof cameraData.port === 'string' ? Number(cameraData.port) : cameraData.port
+      };
       
-      const response = await cameraService.updateCamera(cameraId, {
-        name: cameraData.name,
-        location: cameraData.location,
-        ipAddress: cameraData.ipAddress,
-        port: cameraData.port,
-        active: cameraData.active,
-      });
+      console.log('Submitting updated camera data:', cameraToSubmit);
       
-      if (response.success && response.data) {
+      // Update camera
+      const response = await cameraService.updateCamera(Number(id), cameraToSubmit);
+      
+      console.log('Update camera response:', response);
+      
+      if (response.success) {
         setSuccess('Camera updated successfully');
-        // Update local state with returned data
-        setCameraData(response.data);
+        // Redirect to cameras page after a short delay
+        setTimeout(() => {
+          router.push('/cameras');
+        }, 1500);
       } else {
-        setError(response.error || 'Failed to update camera');
+        // Show detailed error message from API
+        const errorMessage = response.error || 'Failed to update camera';
+        setError(errorMessage);
+        
+        // If it's a port-related error, set a specific field error
+        if (errorMessage.toLowerCase().includes('port')) {
+          setErrors(prev => ({ 
+            ...prev, 
+            port: 'Invalid port format. Must be a number between 1-65535.'
+          }));
+        }
       }
     } catch (err) {
-      setError('Error updating camera. Please try again.');
-      console.error('Error updating camera:', err);
+      console.error('Error in handle submit:', err);
+      setError('An unexpected error occurred');
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
   
@@ -237,7 +256,7 @@ export default function EditCameraPage() {
     <>
       <Box sx={{ mb: 4 }}>
         <Breadcrumbs aria-label="breadcrumb">
-          <Link href="/" passHref>
+          <Link href="/" passHref legacyBehavior>
             <MuiLink 
               sx={{ display: 'flex', alignItems: 'center' }}
               color="inherit"
@@ -247,7 +266,7 @@ export default function EditCameraPage() {
               Dashboard
             </MuiLink>
           </Link>
-          <Link href="/cameras" passHref>
+          <Link href="/cameras" passHref legacyBehavior>
             <MuiLink
               sx={{ display: 'flex', alignItems: 'center' }}
               color="inherit"
@@ -261,6 +280,7 @@ export default function EditCameraPage() {
             sx={{ display: 'flex', alignItems: 'center' }}
             color="text.primary"
           >
+            <EditIcon sx={{ mr: 0.5 }} fontSize="small" />
             Edit Camera
           </Typography>
         </Breadcrumbs>
@@ -334,12 +354,14 @@ export default function EditCameraPage() {
             <TextField
               name="port"
               label="Port"
-              value={cameraData.port || '554'}
+              value={cameraData.port}
               onChange={handleChange}
               fullWidth
               required
+              type="number"
+              inputProps={{ min: 1, max: 65535 }}
               error={!!errors.port}
-              helperText={errors.port || 'Default RTSP port: 554'}
+              helperText={errors.port || 'Default RTSP port: 554 (must be a number)'}
               disabled={saving}
             />
           </Grid>

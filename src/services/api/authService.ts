@@ -1,4 +1,5 @@
 import { ApiResponse } from './types';
+import { apiClient } from './apiClient';
 
 export interface UserAuth {
   id: number;
@@ -20,7 +21,10 @@ export interface AuthTokens {
   expiresAt: number;
 }
 
-// Mock login credentials for demo purposes
+// API integration enabled flag
+const API_ENABLED = process.env.NEXT_PUBLIC_API_ENABLED === 'true';
+
+// Mock login credentials for demo purposes (only used when API_ENABLED is false)
 const DEMO_CREDENTIALS = {
   'admin': {
     password: 'admin123',
@@ -44,7 +48,6 @@ const DEMO_CREDENTIALS = {
   }
 };
 
-// In a real app, these would be API calls
 class AuthService {
   // Storage keys
   private readonly TOKEN_KEY = 'lucam_auth_token';
@@ -62,35 +65,63 @@ class AuthService {
    * Login user with credentials
    */
   async login(username: string, password: string): Promise<ApiResponse<LoginResponse>> {
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // Check credentials against mock data (for demo)
-    const userRecord = DEMO_CREDENTIALS[username as keyof typeof DEMO_CREDENTIALS];
-    
-    if (!userRecord || userRecord.password !== password) {
-      return { 
-        success: false, 
-        error: 'Invalid username or password' 
+    if (API_ENABLED) {
+      try {
+        // Call the real API
+        const response = await apiClient.post<LoginResponse>('/auth/login', {
+          username,
+          password
+        });
+        
+        if (response.success && response.data) {
+          // Save auth data to storage
+          const expiresIn = response.data.expiresIn || 86400; // Default to 24 hours
+          const expiresAt = Date.now() + expiresIn * 1000;
+          this.saveAuthData(response.data.token, response.data.user, expiresAt);
+        }
+        
+        return response;
+      } catch (error) {
+        console.error('Login error:', error);
+        return {
+          success: false,
+          error: 'Failed to login. Please check your credentials and try again.'
+        };
+      }
+    } else {
+      // Fallback to mock implementation
+      console.log('Using mock authentication (API_ENABLED is false)');
+      
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      // Check credentials against mock data (for demo)
+      const userRecord = DEMO_CREDENTIALS[username as keyof typeof DEMO_CREDENTIALS];
+      
+      if (!userRecord || userRecord.password !== password) {
+        return { 
+          success: false, 
+          error: 'Invalid username or password' 
+        };
+      }
+      
+      // Generate mock token (in a real app, this would come from the server)
+      const expiresIn = 24 * 60 * 60; // 24 hours in seconds
+      const expiresAt = Date.now() + expiresIn * 1000;
+      const token = `mock-jwt-token-${Date.now()}-${username}`;
+      
+      // Save auth data to storage
+      this.saveAuthData(token, userRecord.user, expiresAt);
+      
+      return {
+        success: true,
+        data: {
+          token,
+          user: userRecord.user,
+          expiresIn
+        }
       };
     }
-    
-    // Generate mock token (in a real app, this would come from the server)
-    const expiresIn = 24 * 60 * 60; // 24 hours in seconds
-    const expiresAt = Date.now() + expiresIn * 1000;
-    const token = `mock-jwt-token-${Date.now()}-${username}`;
-    
-    // Save auth data to storage
-    this.saveAuthData(token, userRecord.user, expiresAt);
-    
-    return {
-      success: true,
-      data: {
-        token,
-        user: userRecord.user,
-        expiresIn
-      }
-    };
   }
 
   /**
@@ -160,23 +191,47 @@ class AuthService {
       };
     }
     
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    if (!this.isAuthenticated()) {
-      return { 
-        success: false, 
-        error: 'Invalid or expired token' 
+    if (API_ENABLED) {
+      try {
+        // Call the real API verify endpoint
+        const response = await apiClient.get<{ valid: boolean; user: UserAuth }>('/auth/verify');
+        
+        if (!response.success) {
+          // If verification fails, clear the stored auth data
+          this.logout();
+        }
+        
+        return response;
+      } catch (error) {
+        console.error('Token verification error:', error);
+        this.logout();
+        return {
+          success: false,
+          error: 'Failed to verify token'
+        };
+      }
+    } else {
+      // Fallback to mock implementation
+      console.log('Using mock token verification (API_ENABLED is false)');
+      
+      // Simulate API call delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      if (!this.isAuthenticated()) {
+        return { 
+          success: false, 
+          error: 'Invalid or expired token' 
+        };
+      }
+      
+      return {
+        success: true,
+        data: {
+          valid: true,
+          user: this.getUser()
+        }
       };
     }
-    
-    return {
-      success: true,
-      data: {
-        valid: true,
-        user: this.getUser()
-      }
-    };
   }
 
   /**

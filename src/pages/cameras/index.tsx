@@ -243,7 +243,7 @@ export default function CamerasPage() {
     <>
       <Box sx={{ mb: 4 }}>
         <Breadcrumbs aria-label="breadcrumb">
-          <Link href="/" passHref>
+          <Link href="/" passHref legacyBehavior>
             <MuiLink 
               sx={{ display: 'flex', alignItems: 'center' }}
               color="inherit"

@@ -21,6 +21,7 @@ import {
   Cancel as CancelIcon,
   Videocam as CameraIcon,
   Home as HomeIcon,
+  Add as AddIcon,
 } from '@mui/icons-material';
 import Link from 'next/link';
 import { cameraService } from '@/services/api';
@@ -31,7 +32,7 @@ export default function NewCameraPage() {
   const [error, setError] = useState<string | null>(null);
   
   // Camera form state
-  const [cameraData, setCameraData] = useState({
+  const [camera, setCamera] = useState({
     name: '',
     location: '',
     ipAddress: '',
@@ -46,18 +47,18 @@ export default function NewCameraPage() {
   // Handle input change
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
-    setCameraData(prev => ({
+    setCamera(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value,
+      [name]: type === 'checkbox' 
+        ? checked 
+        : name === 'port' 
+          ? value === '' ? '' : Number(value) // Convert port to number, but allow empty string for validation
+          : value,
     }));
     
-    // Clear error when field is changed
+    // Clear errors when typing
     if (errors[name]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[name];
-        return newErrors;
-      });
+      setErrors(prev => ({ ...prev, [name]: '' }));
     }
   };
   
@@ -65,23 +66,23 @@ export default function NewCameraPage() {
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
     
-    if (!cameraData.name.trim()) {
+    if (!camera.name.trim()) {
       newErrors.name = 'Camera name is required';
     }
     
-    if (!cameraData.location.trim()) {
+    if (!camera.location.trim()) {
       newErrors.location = 'Camera location is required';
     }
     
-    if (!cameraData.ipAddress.trim()) {
+    if (!camera.ipAddress.trim()) {
       newErrors.ipAddress = 'IP address is required';
-    } else if (!/^(?:\d{1,3}\.){3}\d{1,3}$/.test(cameraData.ipAddress)) {
+    } else if (!/^(?:\d{1,3}\.){3}\d{1,3}$/.test(camera.ipAddress)) {
       newErrors.ipAddress = 'Please enter a valid IP address (e.g., 192.168.1.1)';
     }
     
-    if (!cameraData.port.toString().trim()) {
+    if (!camera.port.toString().trim()) {
       newErrors.port = 'Port is required';
-    } else if (!/^\d+$/.test(cameraData.port.toString()) || parseInt(cameraData.port.toString()) < 1 || parseInt(cameraData.port.toString()) > 65535) {
+    } else if (!/^\d+$/.test(camera.port.toString()) || parseInt(camera.port.toString()) < 1 || parseInt(camera.port.toString()) > 65535) {
       newErrors.port = 'Please enter a valid port number (1-65535)';
     }
     
@@ -97,26 +98,45 @@ export default function NewCameraPage() {
       return;
     }
     
+    setLoading(true);
+    setError(null);
+    
     try {
-      setLoading(true);
+      // Ensure port is a number
+      const cameraToSubmit = {
+        ...camera,
+        port: typeof camera.port === 'string' ? Number(camera.port) : camera.port
+      };
       
-      const response = await cameraService.createCamera({
-        name: cameraData.name,
-        location: cameraData.location,
-        ipAddress: cameraData.ipAddress,
-        port: cameraData.port,
-        active: cameraData.active,
-      });
+      console.log('Submitting camera data:', cameraToSubmit);
       
-      if (response.success && response.data) {
-        // Redirect to cameras list on success
-        router.push('/cameras');
+      // Create camera
+      const response = await cameraService.createCamera(cameraToSubmit);
+      
+      console.log('Create camera response:', response);
+      
+      if (response.success) {
+        setError('Camera created successfully');
+        // Redirect to cameras page after a short delay
+        setTimeout(() => {
+          router.push('/cameras');
+        }, 1500);
       } else {
-        setError(response.error || 'Failed to create camera');
+        // Show detailed error message from API
+        const errorMessage = response.error || 'Failed to create camera';
+        setError(errorMessage);
+        
+        // If it's a port-related error, set a specific field error
+        if (errorMessage.toLowerCase().includes('port')) {
+          setErrors(prev => ({ 
+            ...prev, 
+            port: 'Invalid port format. Must be a number between 1-65535.'
+          }));
+        }
       }
     } catch (err) {
-      setError('Error creating camera. Please try again.');
-      console.error('Error creating camera:', err);
+      console.error('Error in handle submit:', err);
+      setError('An unexpected error occurred');
     } finally {
       setLoading(false);
     }
@@ -131,7 +151,7 @@ export default function NewCameraPage() {
     <>
       <Box sx={{ mb: 4 }}>
         <Breadcrumbs aria-label="breadcrumb">
-          <Link href="/" passHref>
+          <Link href="/" passHref legacyBehavior>
             <MuiLink 
               sx={{ display: 'flex', alignItems: 'center' }}
               color="inherit"
@@ -141,7 +161,7 @@ export default function NewCameraPage() {
               Dashboard
             </MuiLink>
           </Link>
-          <Link href="/cameras" passHref>
+          <Link href="/cameras" passHref legacyBehavior>
             <MuiLink
               sx={{ display: 'flex', alignItems: 'center' }}
               color="inherit"
@@ -155,7 +175,8 @@ export default function NewCameraPage() {
             sx={{ display: 'flex', alignItems: 'center' }}
             color="text.primary"
           >
-            Add New Camera
+            <AddIcon sx={{ mr: 0.5 }} fontSize="small" />
+            Add Camera
           </Typography>
         </Breadcrumbs>
         
@@ -183,7 +204,7 @@ export default function NewCameraPage() {
             <TextField
               name="name"
               label="Camera Name"
-              value={cameraData.name}
+              value={camera.name}
               onChange={handleChange}
               fullWidth
               required
@@ -198,7 +219,7 @@ export default function NewCameraPage() {
             <TextField
               name="location"
               label="Location"
-              value={cameraData.location}
+              value={camera.location}
               onChange={handleChange}
               fullWidth
               required
@@ -213,7 +234,7 @@ export default function NewCameraPage() {
             <TextField
               name="ipAddress"
               label="IP Address"
-              value={cameraData.ipAddress}
+              value={camera.ipAddress}
               onChange={handleChange}
               fullWidth
               required
@@ -228,12 +249,14 @@ export default function NewCameraPage() {
             <TextField
               name="port"
               label="Port"
-              value={cameraData.port}
+              value={camera.port}
               onChange={handleChange}
               fullWidth
               required
+              type="number" // Ensure we're using number input
+              inputProps={{ min: 1, max: 65535 }} // Add min/max constraints
               error={!!errors.port}
-              helperText={errors.port || 'Default RTSP port: 554'}
+              helperText={errors.port || 'Default RTSP port: 554 (must be a number)'}
               disabled={loading}
             />
           </Grid>
@@ -244,16 +267,16 @@ export default function NewCameraPage() {
               control={
                 <Switch
                   name="active"
-                  checked={cameraData.active}
+                  checked={camera.active}
                   onChange={handleChange}
                   color="success"
                   disabled={loading}
                 />
               }
-              label={cameraData.active ? 'Active' : 'Inactive'}
+              label={camera.active ? 'Active' : 'Inactive'}
             />
             <Typography variant="body2" color="text.secondary">
-              {cameraData.active 
+              {camera.active 
                 ? 'Camera will be operational immediately' 
                 : 'Camera will be added but set to inactive state'}
             </Typography>
@@ -264,7 +287,7 @@ export default function NewCameraPage() {
             <TextField
               name="notes"
               label="Notes (Optional)"
-              value={cameraData.notes}
+              value={camera.notes}
               onChange={handleChange}
               fullWidth
               multiline

@@ -5,8 +5,8 @@ export interface Camera {
   location: string;
   active: boolean;
   url?: string;
-  lastSeen?: string;
-  ipAddress?: string;
+  lastSeen?: string;  // Maps to 'last_seen' in API responses
+  ipAddress?: string; // Maps to 'ip_address' in API responses
   port?: string | number;
 }
 
@@ -97,4 +97,11 @@ export interface AppSettings {
     email: string;
     registrationDate: string;
   };
-} 
+}
+
+// API Response format comments
+// When sending data to the API, convert camelCase to snake_case:
+// - lastSeen -> last_seen
+// - ipAddress -> ip_address
+//
+// The API client automatically converts snake_case from API responses to camelCase for frontend use. 

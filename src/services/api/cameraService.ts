@@ -2,9 +2,8 @@ import { ApiResponse, Camera, CameraFilters, PaginatedResponse } from './types';
 import { apiClient } from './apiClient';
 import { mockCameras, getNextId } from './mockData';
 
-// This is a hybrid service that will use the API client when API_ENABLED is true,
-// but fall back to mock data when it's false (for development without a backend)
-const API_ENABLED = false;
+// API integration enabled flag (from environment variables)
+const API_ENABLED = process.env.NEXT_PUBLIC_API_ENABLED === 'true';
 
 class CameraService {
   /**
@@ -12,10 +11,20 @@ class CameraService {
    */
   async getCameras(filters?: CameraFilters): Promise<ApiResponse<PaginatedResponse<Camera>>> {
     if (API_ENABLED) {
-      return apiClient.get<PaginatedResponse<Camera>>('/cameras', filters);
+      try {
+        // Call the real API
+        return await apiClient.get<PaginatedResponse<Camera>>('/cameras', filters);
+      } catch (error) {
+        console.error('Error fetching cameras:', error);
+        return {
+          success: false,
+          error: 'Failed to fetch cameras from the server'
+        };
+      }
     }
     
     // Mock implementation
+    console.log('Using mock camera data (API_ENABLED is false)');
     const { page = 1, limit = 10, search = '', active } = filters || {};
     
     // Filter cameras based on search and active status
@@ -54,10 +63,20 @@ class CameraService {
    */
   async getCameraById(id: number): Promise<ApiResponse<Camera>> {
     if (API_ENABLED) {
-      return apiClient.get<Camera>(`/cameras/${id}`);
+      try {
+        // Call the real API
+        return await apiClient.get<Camera>(`/cameras/${id}`);
+      } catch (error) {
+        console.error(`Error fetching camera with ID ${id}:`, error);
+        return {
+          success: false,
+          error: `Failed to fetch camera with ID ${id}`
+        };
+      }
     }
     
     // Mock implementation
+    console.log('Using mock camera data (API_ENABLED is false)');
     const camera = mockCameras.find(c => c.id === id);
     
     if (!camera) {
@@ -78,10 +97,33 @@ class CameraService {
    */
   async createCamera(cameraData: Partial<Camera>): Promise<ApiResponse<Camera>> {
     if (API_ENABLED) {
-      return apiClient.post<Camera>('/cameras', cameraData);
+      try {
+        console.log('Creating camera with data:', cameraData);
+        
+        // Call the real API
+        const response = await apiClient.post<Camera>('/cameras', cameraData);
+        
+        // Log response for debugging
+        console.log('API response:', response);
+        
+        return response;
+      } catch (error) {
+        console.error('Error creating camera:', error);
+        if (error instanceof Error) {
+          return {
+            success: false,
+            error: `Failed to create camera: ${error.message}`
+          };
+        }
+        return {
+          success: false,
+          error: 'Failed to create camera: Unknown error'
+        };
+      }
     }
     
     // Mock implementation
+    console.log('Using mock camera data (API_ENABLED is false)');
     const newCamera: Camera = {
       id: getNextId(mockCameras),
       name: cameraData.name || 'New Camera',
@@ -89,7 +131,7 @@ class CameraService {
       active: cameraData.active !== undefined ? cameraData.active : true,
       ipAddress: cameraData.ipAddress,
       port: cameraData.port || 554,
-      lastSeen: null
+      lastSeen: undefined
     };
     
     mockCameras.push(newCamera);
@@ -105,10 +147,20 @@ class CameraService {
    */
   async updateCamera(id: number, cameraData: Partial<Camera>): Promise<ApiResponse<Camera>> {
     if (API_ENABLED) {
-      return apiClient.put<Camera>(`/cameras/${id}`, cameraData);
+      try {
+        // Call the real API
+        return await apiClient.put<Camera>(`/cameras/${id}`, cameraData);
+      } catch (error) {
+        console.error(`Error updating camera with ID ${id}:`, error);
+        return {
+          success: false,
+          error: `Failed to update camera with ID ${id}`
+        };
+      }
     }
     
     // Mock implementation
+    console.log('Using mock camera data (API_ENABLED is false)');
     const cameraIndex = mockCameras.findIndex(c => c.id === id);
     
     if (cameraIndex === -1) {
@@ -137,10 +189,20 @@ class CameraService {
    */
   async deleteCamera(id: number): Promise<ApiResponse<{ message: string, id: number }>> {
     if (API_ENABLED) {
-      return apiClient.delete<{ message: string, id: number }>(`/cameras/${id}`);
+      try {
+        // Call the real API
+        return await apiClient.delete<{ message: string, id: number }>(`/cameras/${id}`);
+      } catch (error) {
+        console.error(`Error deleting camera with ID ${id}:`, error);
+        return {
+          success: false,
+          error: `Failed to delete camera with ID ${id}`
+        };
+      }
     }
     
     // Mock implementation
+    console.log('Using mock camera data (API_ENABLED is false)');
     const cameraIndex = mockCameras.findIndex(c => c.id === id);
     
     if (cameraIndex === -1) {
@@ -166,10 +228,25 @@ class CameraService {
    */
   async bulkUpdateCameras(ids: number[], updates: Partial<Camera>): Promise<ApiResponse<{ updated: number, cameras: number[] }>> {
     if (API_ENABLED) {
-      return apiClient.patch<{ updated: number, cameras: number[] }>('/cameras/bulk-update', { ids, updates });
+      try {
+        // Call the real API
+        const data = {
+          ids,
+          updates
+        };
+        
+        return await apiClient.patch<{ updated: number, cameras: number[] }>('/cameras/bulk-update', data);
+      } catch (error) {
+        console.error('Error performing bulk update:', error);
+        return {
+          success: false,
+          error: 'Failed to update cameras'
+        };
+      }
     }
     
     // Mock implementation
+    console.log('Using mock camera data (API_ENABLED is false)');
     const updatedIds: number[] = [];
     
     ids.forEach(id => {
