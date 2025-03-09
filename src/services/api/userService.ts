@@ -1,5 +1,9 @@
 import { User, ApiResponse, PaginatedResponse, UserFilters } from './types';
 import { mockUsers, getNextId, getCurrentTimestamp } from './mockData';
+import { apiClient } from './apiClient';
+
+// Toggle API mode
+const API_ENABLED = false;
 
 // In-memory store of users (to simulate a database)
 let users = [...mockUsers];
@@ -9,6 +13,193 @@ const logUserActivity = (action: string, details: string) => {
   // In a real implementation, this would call an API endpoint
   console.log(`Activity Log: ${action} - ${details}`);
 };
+
+class UserService {
+  /**
+   * Get all users with optional filtering and pagination
+   */
+  async getUsers(filters?: UserFilters): Promise<ApiResponse<PaginatedResponse<User>>> {
+    if (API_ENABLED) {
+      return apiClient.get<PaginatedResponse<User>>('/users', filters);
+    }
+    
+    // Mock implementation
+    const { page = 1, limit = 10, search = '', role, active } = filters || {};
+    
+    // Filter users based on search, role, and active status
+    let filteredUsers = [...mockUsers];
+    
+    if (search) {
+      const searchLower = search.toLowerCase();
+      filteredUsers = filteredUsers.filter(user => 
+        user.name.toLowerCase().includes(searchLower) || 
+        user.username.toLowerCase().includes(searchLower) ||
+        (user.email && user.email.toLowerCase().includes(searchLower))
+      );
+    }
+    
+    if (role) {
+      filteredUsers = filteredUsers.filter(user => user.role === role);
+    }
+    
+    if (active !== undefined) {
+      filteredUsers = filteredUsers.filter(user => user.active === active);
+    }
+    
+    // Calculate pagination
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedUsers = filteredUsers.slice(startIndex, endIndex);
+    
+    return {
+      success: true,
+      data: {
+        data: paginatedUsers,
+        total: filteredUsers.length,
+        page,
+        limit
+      }
+    };
+  }
+  
+  /**
+   * Get a user by ID
+   */
+  async getUserById(id: number): Promise<ApiResponse<User>> {
+    if (API_ENABLED) {
+      return apiClient.get<User>(`/users/${id}`);
+    }
+    
+    // Mock implementation
+    const user = mockUsers.find(u => u.id === id);
+    
+    if (!user) {
+      return {
+        success: false,
+        error: 'User not found'
+      };
+    }
+    
+    return {
+      success: true,
+      data: { ...user }
+    };
+  }
+  
+  /**
+   * Create a new user
+   */
+  async createUser(userData: Partial<User>): Promise<ApiResponse<User>> {
+    if (API_ENABLED) {
+      return apiClient.post<User>('/users', userData);
+    }
+    
+    // Mock implementation
+    if (!userData.username || !userData.name || !userData.role) {
+      return {
+        success: false,
+        error: 'Username, name, and role are required'
+      };
+    }
+    
+    // Check if username is already taken
+    if (mockUsers.some(u => u.username === userData.username)) {
+      return {
+        success: false,
+        error: 'Username already exists'
+      };
+    }
+    
+    const newUser: User = {
+      id: getNextId(mockUsers),
+      username: userData.username,
+      name: userData.name,
+      role: userData.role,
+      active: userData.active !== undefined ? userData.active : true,
+      email: userData.email || undefined,
+      lastLogin: userData.lastLogin || undefined
+    };
+    
+    mockUsers.push(newUser);
+    
+    return {
+      success: true,
+      data: { ...newUser }
+    };
+  }
+  
+  /**
+   * Update an existing user
+   */
+  async updateUser(id: number, userData: Partial<User>): Promise<ApiResponse<User>> {
+    if (API_ENABLED) {
+      return apiClient.put<User>(`/users/${id}`, userData);
+    }
+    
+    // Mock implementation
+    const userIndex = mockUsers.findIndex(u => u.id === id);
+    
+    if (userIndex === -1) {
+      return {
+        success: false,
+        error: 'User not found'
+      };
+    }
+    
+    // Check if username is being changed and is already taken by another user
+    if (userData.username && userData.username !== mockUsers[userIndex].username &&
+        mockUsers.some(u => u.id !== id && u.username === userData.username)) {
+      return {
+        success: false,
+        error: 'Username already exists'
+      };
+    }
+    
+    const updatedUser = {
+      ...mockUsers[userIndex],
+      ...userData,
+      id // Ensure ID doesn't change
+    };
+    
+    mockUsers[userIndex] = updatedUser;
+    
+    return {
+      success: true,
+      data: { ...updatedUser }
+    };
+  }
+  
+  /**
+   * Delete a user
+   */
+  async deleteUser(id: number): Promise<ApiResponse<{ message: string, id: number }>> {
+    if (API_ENABLED) {
+      return apiClient.delete<{ message: string, id: number }>(`/users/${id}`);
+    }
+    
+    // Mock implementation
+    const userIndex = mockUsers.findIndex(u => u.id === id);
+    
+    if (userIndex === -1) {
+      return {
+        success: false,
+        error: 'User not found'
+      };
+    }
+    
+    mockUsers.splice(userIndex, 1);
+    
+    return {
+      success: true,
+      data: {
+        message: 'User deleted successfully',
+        id
+      }
+    };
+  }
+}
+
+export const userService = new UserService();
 
 // Get all users (with optional filters)
 export const getUsers = async (

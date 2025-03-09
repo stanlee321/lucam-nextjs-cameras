@@ -26,18 +26,26 @@ import {
   DialogActions,
   Snackbar,
   Alert,
+  Breadcrumbs,
+  Link as MuiLink,
 } from '@mui/material';
 import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Search as SearchIcon,
   Add as AddIcon,
+  Home as HomeIcon,
+  Camera as CameraIcon,
 } from '@mui/icons-material';
 import Link from 'next/link';
-import { cameraService } from '@/services/api';
+import { cameraService } from '@/services/api/cameraService';
 import { Camera } from '@/services/api/types';
+import { useAuth } from '../../contexts/AuthContext';
+import { useRouter } from 'next/router';
 
 export default function CamerasPage() {
+  const router = useRouter();
+  const { user } = useAuth();
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -55,24 +63,28 @@ export default function CamerasPage() {
 
   // Fetch cameras based on filters
   const fetchCameras = async () => {
+    setLoading(true);
+    setError(null);
+    
     try {
-      setLoading(true);
       const response = await cameraService.getCameras({
-        page: page + 1, // API uses 1-based indexing
+        page: page + 1, // MUI Table uses 0-based index, API uses 1-based
         limit: rowsPerPage,
-        active: showInactive ? undefined : true,
         search: searchTerm.trim() || undefined,
+        active: showInactive ? undefined : true,
       });
-
+      
       if (response.success && response.data) {
         setCameras(response.data.data);
         setTotalCameras(response.data.total);
       } else {
         setError(response.error || 'Failed to fetch cameras');
+        setCameras([]);
       }
     } catch (err) {
-      setError('Error loading cameras. Please try again.');
-      console.error('Error loading cameras:', err);
+      console.error('Error fetching cameras:', err);
+      setError('An error occurred while fetching cameras');
+      setCameras([]);
     } finally {
       setLoading(false);
     }
@@ -91,23 +103,27 @@ export default function CamerasPage() {
 
   // Toggle camera active status
   const handleToggleActive = async (camera: Camera) => {
+    // Check permissions
+    if (user?.role !== 'SuperAdmin' && user?.role !== 'Admin') {
+      setError('You do not have permission to update camera status');
+      return;
+    }
+    
     try {
       const response = await cameraService.updateCamera(camera.id, {
-        active: !camera.active,
+        ...camera,
+        active: !camera.active
       });
-
-      if (response.success && response.data) {
-        setSuccess(`Camera ${response.data.name} ${response.data.active ? 'enabled' : 'disabled'}`);
-        // Update the camera in the list
-        setCameras(prevCameras =>
-          prevCameras.map(c => (c.id === camera.id ? response.data! : c))
-        );
+      
+      if (response.success) {
+        // Refresh the camera list
+        fetchCameras();
       } else {
         setError(response.error || 'Failed to update camera status');
       }
     } catch (err) {
-      setError('Error updating camera status. Please try again.');
       console.error('Error updating camera:', err);
+      setError('An error occurred while updating the camera');
     }
   };
 
@@ -141,29 +157,30 @@ export default function CamerasPage() {
   };
 
   // Handle delete camera
-  const handleDeleteCamera = async () => {
-    if (!cameraToDelete) {
-      setDeleteDialogOpen(false);
+  const handleDeleteCamera = async (cameraId: number) => {
+    // Check permissions
+    if (user?.role !== 'SuperAdmin' && user?.role !== 'Admin') {
+      setError('You do not have permission to delete cameras');
       return;
     }
-
+    
     try {
-      const response = await cameraService.deleteCamera(cameraToDelete.id);
-
+      setLoading(true);
+      const response = await cameraService.deleteCamera(cameraId);
+      
       if (response.success) {
-        setSuccess(`Camera ${cameraToDelete.name} deleted`);
-        // Remove camera from the list
-        setCameras(prevCameras => prevCameras.filter(c => c.id !== cameraToDelete.id));
-        setTotalCameras(prev => prev - 1);
+        // Refresh the camera list
+        fetchCameras();
+        // Show success message
+        setSuccess('Camera deleted successfully');
       } else {
         setError(response.error || 'Failed to delete camera');
       }
     } catch (err) {
-      setError('Error deleting camera. Please try again.');
       console.error('Error deleting camera:', err);
+      setError('An error occurred while deleting the camera');
     } finally {
-      setDeleteDialogOpen(false);
-      setCameraToDelete(null);
+      setLoading(false);
     }
   };
 
@@ -205,19 +222,68 @@ export default function CamerasPage() {
   const numSelected = selectedCameras.length;
   const isSelected = (id: number) => selectedCameras.includes(id);
 
+  // Add camera button (with permission check)
+  const renderAddCameraButton = () => {
+    const canAddCamera = user?.role === 'SuperAdmin' || user?.role === 'Admin';
+    
+    return (
+      <Button
+        variant="contained"
+        startIcon={<AddIcon />}
+        onClick={() => router.push('/cameras/new')}
+        disabled={!canAddCamera}
+        sx={{ ml: 2 }}
+      >
+        Add Camera
+      </Button>
+    );
+  };
+
   return (
     <>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">Cameras</Typography>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<AddIcon />}
-          component={Link}
-          href="/cameras/new"
-        >
-          Add Camera
-        </Button>
+      <Box sx={{ mb: 4 }}>
+        <Breadcrumbs aria-label="breadcrumb">
+          <Link href="/" passHref>
+            <MuiLink 
+              sx={{ display: 'flex', alignItems: 'center' }}
+              color="inherit"
+              underline="hover"
+            >
+              <HomeIcon sx={{ mr: 0.5 }} fontSize="small" />
+              Dashboard
+            </MuiLink>
+          </Link>
+          <Typography
+            sx={{ display: 'flex', alignItems: 'center' }}
+            color="text.primary"
+          >
+            <CameraIcon sx={{ mr: 0.5 }} fontSize="small" />
+            Cameras
+          </Typography>
+        </Breadcrumbs>
+        
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
+          <Typography variant="h4" component="h1">
+            Cameras
+          </Typography>
+          
+          <Box>
+            {numSelected > 0 && (
+              <Tooltip title="Delete selected">
+                <IconButton 
+                  onClick={() => {
+                    setBulkAction('disable');
+                    setBulkActionDialogOpen(true);
+                  }}
+                  disabled={user?.role !== 'SuperAdmin' && user?.role !== 'Admin'}
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </Tooltip>
+            )}
+            {renderAddCameraButton()}
+          </Box>
+        </Box>
       </Box>
 
       {/* Filters */}
@@ -384,27 +450,35 @@ export default function CamerasPage() {
                       {camera.lastSeen ? new Date(camera.lastSeen).toLocaleString() : '-'}
                     </TableCell>
                     <TableCell>
-                      <Tooltip title="Edit">
-                        <IconButton
-                          component={Link}
-                          href={`/cameras/${camera.id}`}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <EditIcon />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Delete">
-                        <IconButton
-                          color="error"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setCameraToDelete(camera);
-                            setDeleteDialogOpen(true);
-                          }}
-                        >
-                          <DeleteIcon />
-                        </IconButton>
-                      </Tooltip>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Tooltip title="Edit">
+                          <IconButton
+                            aria-label="edit"
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/cameras/${camera.id}`);
+                            }}
+                            disabled={user?.role !== 'SuperAdmin' && user?.role !== 'Admin'}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete">
+                          <IconButton
+                            aria-label="delete"
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCameraToDelete(camera);
+                              setDeleteDialogOpen(true);
+                            }}
+                            disabled={user?.role !== 'SuperAdmin' && user?.role !== 'Admin'}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
                     </TableCell>
                   </TableRow>
                 );
@@ -436,7 +510,7 @@ export default function CamerasPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleDeleteCamera} color="error" variant="contained">
+          <Button onClick={() => handleDeleteCamera(cameraToDelete?.id || 0)} color="error" variant="contained">
             Delete
           </Button>
         </DialogActions>

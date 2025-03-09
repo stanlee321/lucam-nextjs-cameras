@@ -1,249 +1,198 @@
-import { Camera, ApiResponse, PaginatedResponse, CameraFilters } from './types';
-import { mockCameras, getNextId, getCurrentTimestamp } from './mockData';
+import { ApiResponse, Camera, CameraFilters, PaginatedResponse } from './types';
+import { apiClient } from './apiClient';
+import { mockCameras, getNextId } from './mockData';
 
-// In-memory store of cameras (to simulate a database)
-let cameras = [...mockCameras];
+// This is a hybrid service that will use the API client when API_ENABLED is true,
+// but fall back to mock data when it's false (for development without a backend)
+const API_ENABLED = false;
 
-// Helper function to log activity
-const logCameraActivity = (action: string, details: string) => {
-  // In a real implementation, this would call an API endpoint
-  console.log(`Activity Log: ${action} - ${details}`);
-};
-
-// Get all cameras (with optional filters)
-export const getCameras = async (
-  filters?: CameraFilters
-): Promise<ApiResponse<PaginatedResponse<Camera>>> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-
-  try {
-    let filteredCameras = [...cameras];
-
-    // Apply filters
-    if (filters) {
-      if (filters.active !== undefined) {
-        filteredCameras = filteredCameras.filter(camera => camera.active === filters.active);
-      }
-
-      if (filters.search) {
-        const searchLower = filters.search.toLowerCase();
-        filteredCameras = filteredCameras.filter(
-          camera =>
-            camera.name.toLowerCase().includes(searchLower) ||
-            camera.location.toLowerCase().includes(searchLower)
-        );
-      }
+class CameraService {
+  /**
+   * Get all cameras with optional filtering and pagination
+   */
+  async getCameras(filters?: CameraFilters): Promise<ApiResponse<PaginatedResponse<Camera>>> {
+    if (API_ENABLED) {
+      return apiClient.get<PaginatedResponse<Camera>>('/cameras', filters);
     }
-
-    // Apply pagination
-    const page = filters?.page || 1;
-    const limit = filters?.limit || 10;
+    
+    // Mock implementation
+    const { page = 1, limit = 10, search = '', active } = filters || {};
+    
+    // Filter cameras based on search and active status
+    let filteredCameras = [...mockCameras];
+    
+    if (search) {
+      const searchLower = search.toLowerCase();
+      filteredCameras = filteredCameras.filter(camera => 
+        camera.name.toLowerCase().includes(searchLower) || 
+        camera.location.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    if (active !== undefined) {
+      filteredCameras = filteredCameras.filter(camera => camera.active === active);
+    }
+    
+    // Calculate pagination
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + limit;
     const paginatedCameras = filteredCameras.slice(startIndex, endIndex);
-
+    
     return {
       success: true,
       data: {
         data: paginatedCameras,
         total: filteredCameras.length,
         page,
-        limit,
-      },
-    };
-  } catch (error) {
-    console.error('Error getting cameras:', error);
-    return {
-      success: false,
-      error: 'Failed to fetch cameras. Please try again.',
+        limit
+      }
     };
   }
-};
-
-// Get a single camera by ID
-export const getCameraById = async (id: number): Promise<ApiResponse<Camera>> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 300));
-
-  try {
-    const camera = cameras.find(c => c.id === id);
-
+  
+  /**
+   * Get a camera by ID
+   */
+  async getCameraById(id: number): Promise<ApiResponse<Camera>> {
+    if (API_ENABLED) {
+      return apiClient.get<Camera>(`/cameras/${id}`);
+    }
+    
+    // Mock implementation
+    const camera = mockCameras.find(c => c.id === id);
+    
     if (!camera) {
       return {
         success: false,
-        error: `Camera with ID ${id} not found.`,
+        error: 'Camera not found'
       };
     }
-
+    
     return {
       success: true,
-      data: camera,
-    };
-  } catch (error) {
-    console.error(`Error getting camera ${id}:`, error);
-    return {
-      success: false,
-      error: 'Failed to fetch camera details. Please try again.',
+      data: { ...camera }
     };
   }
-};
-
-// Create a new camera
-export const createCamera = async (cameraData: Omit<Camera, 'id'>): Promise<ApiResponse<Camera>> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 700));
-
-  try {
+  
+  /**
+   * Create a new camera
+   */
+  async createCamera(cameraData: Partial<Camera>): Promise<ApiResponse<Camera>> {
+    if (API_ENABLED) {
+      return apiClient.post<Camera>('/cameras', cameraData);
+    }
+    
+    // Mock implementation
     const newCamera: Camera = {
-      ...cameraData,
-      id: getNextId(cameras),
-      lastSeen: getCurrentTimestamp(),
+      id: getNextId(mockCameras),
+      name: cameraData.name || 'New Camera',
+      location: cameraData.location || 'Unknown',
+      active: cameraData.active !== undefined ? cameraData.active : true,
+      ipAddress: cameraData.ipAddress,
+      port: cameraData.port || 554,
+      lastSeen: null
     };
-
-    cameras.push(newCamera);
-
-    // Log activity
-    logCameraActivity('Added Camera', `Added Camera ${newCamera.id} (${newCamera.name})`);
-
+    
+    mockCameras.push(newCamera);
+    
     return {
       success: true,
-      data: newCamera,
-    };
-  } catch (error) {
-    console.error('Error creating camera:', error);
-    return {
-      success: false,
-      error: 'Failed to create camera. Please try again.',
+      data: { ...newCamera }
     };
   }
-};
-
-// Update an existing camera
-export const updateCamera = async (id: number, cameraData: Partial<Camera>): Promise<ApiResponse<Camera>> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 600));
-
-  try {
-    const index = cameras.findIndex(c => c.id === id);
-
-    if (index === -1) {
+  
+  /**
+   * Update an existing camera
+   */
+  async updateCamera(id: number, cameraData: Partial<Camera>): Promise<ApiResponse<Camera>> {
+    if (API_ENABLED) {
+      return apiClient.put<Camera>(`/cameras/${id}`, cameraData);
+    }
+    
+    // Mock implementation
+    const cameraIndex = mockCameras.findIndex(c => c.id === id);
+    
+    if (cameraIndex === -1) {
       return {
         success: false,
-        error: `Camera with ID ${id} not found.`,
+        error: 'Camera not found'
       };
     }
-
+    
     const updatedCamera = {
-      ...cameras[index],
+      ...mockCameras[cameraIndex],
       ...cameraData,
+      id // Ensure ID doesn't change
     };
-
-    cameras[index] = updatedCamera;
-
-    // Log activity
-    let activityDetails = `Updated Camera ${id} (${updatedCamera.name})`;
-    if (cameraData.active !== undefined) {
-      activityDetails = `${cameraData.active ? 'Enabled' : 'Disabled'} Camera ${id} (${updatedCamera.name})`;
-    }
-    logCameraActivity('Updated Camera', activityDetails);
-
+    
+    mockCameras[cameraIndex] = updatedCamera;
+    
     return {
       success: true,
-      data: updatedCamera,
-    };
-  } catch (error) {
-    console.error(`Error updating camera ${id}:`, error);
-    return {
-      success: false,
-      error: 'Failed to update camera. Please try again.',
+      data: { ...updatedCamera }
     };
   }
-};
-
-// Delete a camera
-export const deleteCamera = async (id: number): Promise<ApiResponse<void>> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-
-  try {
-    const index = cameras.findIndex(c => c.id === id);
-
-    if (index === -1) {
+  
+  /**
+   * Delete a camera
+   */
+  async deleteCamera(id: number): Promise<ApiResponse<{ message: string, id: number }>> {
+    if (API_ENABLED) {
+      return apiClient.delete<{ message: string, id: number }>(`/cameras/${id}`);
+    }
+    
+    // Mock implementation
+    const cameraIndex = mockCameras.findIndex(c => c.id === id);
+    
+    if (cameraIndex === -1) {
       return {
         success: false,
-        error: `Camera with ID ${id} not found.`,
+        error: 'Camera not found'
       };
     }
-
-    const cameraName = cameras[index].name;
-    cameras = cameras.filter(c => c.id !== id);
-
-    // Log activity
-    logCameraActivity('Deleted Camera', `Deleted Camera ${id} (${cameraName})`);
-
-    return {
-      success: true,
-    };
-  } catch (error) {
-    console.error(`Error deleting camera ${id}:`, error);
-    return {
-      success: false,
-      error: 'Failed to delete camera. Please try again.',
-    };
-  }
-};
-
-// Bulk update cameras (e.g., enable/disable multiple)
-export const bulkUpdateCameras = async (
-  ids: number[],
-  update: Partial<Camera>
-): Promise<ApiResponse<{ updated: number; failed: number }>> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 800));
-
-  try {
-    let updatedCount = 0;
-    let failedCount = 0;
-
-    for (const id of ids) {
-      const index = cameras.findIndex(c => c.id === id);
-
-      if (index !== -1) {
-        cameras[index] = {
-          ...cameras[index],
-          ...update,
-        };
-        updatedCount++;
-      } else {
-        failedCount++;
-      }
-    }
-
-    // Log activity
-    let activityDetails = `Bulk updated ${updatedCount} cameras`;
-    if (update.active !== undefined) {
-      activityDetails = `${update.active ? 'Enabled' : 'Disabled'} ${updatedCount} cameras`;
-    }
-    logCameraActivity('Bulk Camera Update', activityDetails);
-
+    
+    mockCameras.splice(cameraIndex, 1);
+    
     return {
       success: true,
       data: {
-        updated: updatedCount,
-        failed: failedCount,
-      },
-    };
-  } catch (error) {
-    console.error('Error bulk updating cameras:', error);
-    return {
-      success: false,
-      error: 'Failed to update cameras. Please try again.',
+        message: 'Camera deleted successfully',
+        id
+      }
     };
   }
-};
+  
+  /**
+   * Bulk update cameras (e.g., to change active status for multiple cameras)
+   */
+  async bulkUpdateCameras(ids: number[], updates: Partial<Camera>): Promise<ApiResponse<{ updated: number, cameras: number[] }>> {
+    if (API_ENABLED) {
+      return apiClient.patch<{ updated: number, cameras: number[] }>('/cameras/bulk-update', { ids, updates });
+    }
+    
+    // Mock implementation
+    const updatedIds: number[] = [];
+    
+    ids.forEach(id => {
+      const cameraIndex = mockCameras.findIndex(c => c.id === id);
+      
+      if (cameraIndex !== -1) {
+        mockCameras[cameraIndex] = {
+          ...mockCameras[cameraIndex],
+          ...updates,
+          id // Ensure ID doesn't change
+        };
+        updatedIds.push(id);
+      }
+    });
+    
+    return {
+      success: true,
+      data: {
+        updated: updatedIds.length,
+        cameras: updatedIds
+      }
+    };
+  }
+}
 
-// Reset cameras to default (for testing purposes)
-export const resetCameras = () => {
-  cameras = [...mockCameras];
-}; 
+export const cameraService = new CameraService(); 

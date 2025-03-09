@@ -1,5 +1,9 @@
 import { ActivityLog, ApiResponse, PaginatedResponse, ActivityLogFilters } from './types';
 import { mockActivityLogs, getNextId, getCurrentTimestamp } from './mockData';
+import { apiClient } from './apiClient';
+
+// Toggle API mode
+const API_ENABLED = false;
 
 // In-memory store of activity logs (to simulate a database)
 let activityLogs = [...mockActivityLogs];
@@ -8,6 +12,10 @@ let activityLogs = [...mockActivityLogs];
 export const getActivityLogs = async (
   filters?: ActivityLogFilters
 ): Promise<ApiResponse<PaginatedResponse<ActivityLog>>> => {
+  if (API_ENABLED) {
+    return apiClient.get<PaginatedResponse<ActivityLog>>('/activity-logs', filters);
+  }
+
   // Simulate network delay
   await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -158,4 +166,42 @@ export const exportActivityLogs = async (
 // Reset activity logs to default (for testing purposes)
 export const resetActivityLogs = () => {
   activityLogs = [...mockActivityLogs];
-}; 
+};
+
+class ActivityLogService {
+  /**
+   * Get unique action types for filtering
+   */
+  async getActionTypes(): Promise<ApiResponse<string[]>> {
+    if (API_ENABLED) {
+      return apiClient.get<string[]>('/activity-logs/actions');
+    }
+    
+    // Mock implementation
+    const uniqueActions = Array.from(new Set(mockActivityLogs.map(log => log.action)));
+    
+    return {
+      success: true,
+      data: uniqueActions
+    };
+  }
+  
+  /**
+   * Get unique users for filtering
+   */
+  async getUsers(): Promise<ApiResponse<string[]>> {
+    if (API_ENABLED) {
+      return apiClient.get<string[]>('/activity-logs/users');
+    }
+    
+    // Mock implementation
+    const uniqueUsers = Array.from(new Set(mockActivityLogs.map(log => log.user)));
+    
+    return {
+      success: true,
+      data: uniqueUsers
+    };
+  }
+}
+
+export const activityLogService = new ActivityLogService(); 

@@ -3,11 +3,13 @@
 // Types
 export * from './types';
 
-// Services
-export * as cameraService from './cameraService';
-export * as userService from './userService';
-export * as activityLogService from './activityLogService';
-export * as reportService from './reportService';
+// Services - Using direct exports to avoid namespace issues
+export { cameraService } from './cameraService';
+export { userService } from './userService';
+export { activityLogService } from './activityLogService';
+export { reportService } from './reportService';
+export { authService } from './authService';
+export { apiClient } from './apiClient';
 
 // Mock data (exported for testing purposes)
 export * from './mockData'; 

@@ -40,12 +40,12 @@ export const mockCameras: Camera[] = [
   },
   {
     id: 105,
-    name: 'Loading Dock',
-    location: 'Warehouse',
+    name: 'Reception',
+    location: 'Office',
     active: true,
     ipAddress: '192.168.1.105',
     port: 8000,
-    lastSeen: '2023-03-09T11:10:05Z',
+    lastSeen: '2023-03-09T17:10:05Z',
   },
 ];
 
@@ -53,39 +53,39 @@ export const mockCameras: Camera[] = [
 export const mockUsers: User[] = [
   {
     id: 1,
-    username: 'adminUser1',
-    name: 'Alice Admin',
+    username: 'admin',
+    name: 'Admin User',
     role: 'SuperAdmin',
-    lastLogin: '2023-03-08T14:22:30Z',
+    email: 'admin@example.com',
     active: true,
-    email: 'alice@example.com',
+    lastLogin: '2023-03-09T16:00:00Z',
   },
   {
     id: 2,
-    username: 'jdoe',
-    name: 'John Doe',
+    username: 'user',
+    name: 'Regular User',
     role: 'Viewer',
-    lastLogin: '2023-03-09T09:10:15Z',
+    email: 'user@example.com',
     active: true,
-    email: 'john@example.com',
+    lastLogin: '2023-03-09T10:30:00Z',
   },
   {
     id: 3,
-    username: 'asmith',
-    name: 'Alice Smith',
+    username: 'john',
+    name: 'John Smith',
     role: 'Admin',
-    lastLogin: '2023-03-04T17:45:22Z',
+    email: 'john@example.com',
     active: true,
-    email: 'asmith@example.com',
+    lastLogin: '2023-03-08T14:45:00Z',
   },
   {
     id: 4,
-    username: 'mjohnson',
-    name: 'Mark Johnson',
-    role: 'Admin',
-    lastLogin: '2023-03-07T08:30:40Z',
+    username: 'alice',
+    name: 'Alice Johnson',
+    role: 'Viewer',
+    email: 'alice@example.com',
     active: false,
-    email: 'mjohnson@example.com',
+    lastLogin: '2023-02-28T09:15:00Z',
   },
 ];
 
@@ -93,59 +93,45 @@ export const mockUsers: User[] = [
 export const mockActivityLogs: ActivityLog[] = [
   {
     id: 1,
-    timestamp: '2023-03-09T21:05:30Z',
-    user: 'adminUser1',
-    action: 'Edited Camera',
-    details: 'Changed name to "Lobby"',
+    timestamp: '2023-03-09T16:30:45Z',
+    user: 'admin',
+    action: 'User Login',
+    details: 'Logged in from 192.168.1.10',
   },
   {
     id: 2,
-    timestamp: '2023-03-09T20:57:10Z',
-    user: 'asmith',
-    action: 'Generated Report',
-    details: '"Monthly Usage" Report (March 2023)',
+    timestamp: '2023-03-09T16:35:20Z',
+    user: 'admin',
+    action: 'Camera Added',
+    details: 'Added camera "Reception"',
   },
   {
     id: 3,
-    timestamp: '2023-03-09T20:45:00Z',
-    user: 'adminUser1',
-    action: 'Disabled Camera',
-    details: 'Camera 102 (Side Door)',
+    timestamp: '2023-03-09T14:22:30Z',
+    user: 'john',
+    action: 'Camera Updated',
+    details: 'Updated camera "Side Door" - Changed status to inactive',
   },
   {
     id: 4,
-    timestamp: '2023-03-09T20:30:15Z',
-    user: 'adminUser1',
-    action: 'Created User',
-    details: 'User account "jdoe" (Role: Viewer)',
+    timestamp: '2023-03-09T10:30:00Z',
+    user: 'user',
+    action: 'User Login',
+    details: 'Logged in from 192.168.1.20',
   },
   {
     id: 5,
-    timestamp: '2023-03-09T19:15:20Z',
-    user: 'asmith',
-    action: 'Logged In',
-    details: 'IP: 192.168.1.45',
+    timestamp: '2023-03-08T14:45:00Z',
+    user: 'john',
+    action: 'User Login',
+    details: 'Logged in from 192.168.1.15',
   },
   {
     id: 6,
-    timestamp: '2023-03-09T18:22:10Z',
-    user: 'adminUser1',
-    action: 'Added Camera',
-    details: 'Added Camera 105 (Loading Dock)',
-  },
-  {
-    id: 7,
-    timestamp: '2023-03-09T17:10:05Z',
-    user: 'mjohnson',
-    action: 'Bulk Camera Update',
-    details: 'Enabled 3 cameras',
-  },
-  {
-    id: 8,
-    timestamp: '2023-03-09T16:45:30Z',
-    user: 'adminUser1',
-    action: 'System Settings',
-    details: 'Updated server configuration',
+    timestamp: '2023-03-08T11:10:05Z',
+    user: 'admin',
+    action: 'System Update',
+    details: 'Updated system to version 1.2.0',
   },
 ];
 
@@ -153,53 +139,44 @@ export const mockActivityLogs: ActivityLog[] = [
 export const mockReports: Report[] = [
   {
     id: 1,
-    name: 'Usage_Summary_Mar_2023',
-    generatedOn: '2023-03-01T00:00:00Z',
-    type: 'Usage Summary',
+    name: 'Camera Status Report',
+    generatedOn: '2023-03-09T17:10:05Z',
+    type: 'Camera Status',
     format: 'PDF',
-    url: '/reports/Usage_Summary_Mar_2023.pdf',
+    url: '/reports/camera_status_20230309.pdf',
   },
   {
     id: 2,
-    name: 'Camera_Status_Report_Q1',
-    generatedOn: '2023-03-01T00:00:00Z',
-    type: 'Camera Status',
+    name: 'User Activity Report',
+    generatedOn: '2023-03-08T14:45:00Z',
+    type: 'User Activity',
     format: 'CSV',
-    url: '/reports/Camera_Status_Report_Q1.csv',
+    url: '/reports/user_activity_20230308.csv',
   },
   {
     id: 3,
-    name: 'User_Activity_Feb_2023',
-    generatedOn: '2023-03-01T00:00:00Z',
-    type: 'User Activity',
-    format: 'PDF',
-    url: '/reports/User_Activity_Feb_2023.pdf',
-  },
-  {
-    id: 4,
-    name: 'System_Health_Report',
-    generatedOn: '2023-03-08T08:15:00Z',
+    name: 'System Health Report',
+    generatedOn: '2023-03-07T11:30:00Z',
     type: 'System Health',
     format: 'PDF',
-    url: '/reports/System_Health_Report.pdf',
+    url: '/reports/system_health_20230307.pdf',
   },
 ];
 
-// Mock Report Types
+// Report Types
 export const reportTypes = [
-  'Usage Summary',
   'Camera Status',
   'User Activity',
   'System Health',
-  'Access Log',
+  'Security Events',
+  'Storage Analysis',
 ];
 
-// Function to create a new unique ID for a given collection
+// Helper functions
 export const getNextId = <T extends { id: number }>(collection: T[]): number => {
   return Math.max(...collection.map(item => item.id), 0) + 1;
 };
 
-// Function to get a timestamp for the current time
 export const getCurrentTimestamp = (): string => {
   return new Date().toISOString();
 }; 

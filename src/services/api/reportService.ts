@@ -1,271 +1,169 @@
-import { Report, ApiResponse, PaginatedResponse, ReportFilters } from './types';
-import { mockReports, reportTypes, getNextId, getCurrentTimestamp } from './mockData';
+import { ApiResponse, Report, ReportFilters, PaginatedResponse } from './types';
+import { apiClient } from './apiClient';
+import { mockReports, reportTypes } from './mockData';
 
-// In-memory store of reports (to simulate a database)
-let reports = [...mockReports];
+// Toggle API mode
+const API_ENABLED = false;
 
-// Helper function to log activity
-const logReportActivity = (action: string, details: string) => {
-  // In a real implementation, this would call an API endpoint
-  console.log(`Activity Log: ${action} - ${details}`);
-};
-
-// Get all reports (with optional filters)
-export const getReports = async (
-  filters?: ReportFilters
-): Promise<ApiResponse<PaginatedResponse<Report>>> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 600));
-
-  try {
-    let filteredReports = [...reports];
-
-    // Apply filters
-    if (filters) {
-      if (filters.type) {
-        filteredReports = filteredReports.filter(report => 
-          report.type.toLowerCase() === filters.type!.toLowerCase()
-        );
-      }
-
-      if (filters.startDate) {
-        const startDate = new Date(filters.startDate);
-        filteredReports = filteredReports.filter(report => 
-          new Date(report.generatedOn) >= startDate
-        );
-      }
-
-      if (filters.endDate) {
-        const endDate = new Date(filters.endDate);
-        // Include the entire end date by setting it to the end of the day
-        endDate.setHours(23, 59, 59, 999);
-        filteredReports = filteredReports.filter(report => 
-          new Date(report.generatedOn) <= endDate
-        );
-      }
+class ReportService {
+  /**
+   * Get all reports with optional filtering and pagination
+   */
+  async getReports(filters?: ReportFilters): Promise<ApiResponse<PaginatedResponse<Report>>> {
+    if (API_ENABLED) {
+      return apiClient.get<PaginatedResponse<Report>>('/reports', filters);
     }
-
-    // Sort by generation date (newest first)
+    
+    // Mock implementation
+    const { page = 1, limit = 10, type, startDate, endDate } = filters || {};
+    
+    // Filter reports
+    let filteredReports = [...mockReports];
+    
+    if (type) {
+      filteredReports = filteredReports.filter(report => report.type === type);
+    }
+    
+    if (startDate) {
+      const start = new Date(startDate);
+      filteredReports = filteredReports.filter(report => new Date(report.generatedOn) >= start);
+    }
+    
+    if (endDate) {
+      const end = new Date(endDate);
+      filteredReports = filteredReports.filter(report => new Date(report.generatedOn) <= end);
+    }
+    
+    // Sort by generatedOn (newest first)
     filteredReports.sort((a, b) => 
       new Date(b.generatedOn).getTime() - new Date(a.generatedOn).getTime()
     );
-
-    // Apply pagination
-    const page = filters?.page || 1;
-    const limit = filters?.limit || 10;
+    
+    // Calculate pagination
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + limit;
     const paginatedReports = filteredReports.slice(startIndex, endIndex);
-
+    
     return {
       success: true,
       data: {
         data: paginatedReports,
         total: filteredReports.length,
         page,
-        limit,
-      },
-    };
-  } catch (error) {
-    console.error('Error getting reports:', error);
-    return {
-      success: false,
-      error: 'Failed to fetch reports. Please try again.',
+        limit
+      }
     };
   }
-};
-
-// Get a single report by ID
-export const getReportById = async (id: number): Promise<ApiResponse<Report>> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 300));
-
-  try {
-    const report = reports.find(r => r.id === id);
-
+  
+  /**
+   * Get a report by ID
+   */
+  async getReportById(id: number): Promise<ApiResponse<Report>> {
+    if (API_ENABLED) {
+      return apiClient.get<Report>(`/reports/${id}`);
+    }
+    
+    // Mock implementation
+    const report = mockReports.find(r => r.id === id);
+    
     if (!report) {
       return {
         success: false,
-        error: `Report with ID ${id} not found.`,
+        error: 'Report not found'
       };
     }
-
+    
     return {
       success: true,
-      data: report,
-    };
-  } catch (error) {
-    console.error(`Error getting report ${id}:`, error);
-    return {
-      success: false,
-      error: 'Failed to fetch report details. Please try again.',
+      data: { ...report }
     };
   }
-};
-
-// Get available report types
-export const getReportTypes = async (): Promise<ApiResponse<string[]>> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 200));
-
-  try {
+  
+  /**
+   * Get available report types
+   */
+  async getReportTypes(): Promise<ApiResponse<string[]>> {
+    if (API_ENABLED) {
+      return apiClient.get<string[]>('/reports/types');
+    }
+    
+    // Mock implementation
     return {
       success: true,
-      data: reportTypes,
-    };
-  } catch (error) {
-    console.error('Error getting report types:', error);
-    return {
-      success: false,
-      error: 'Failed to fetch report types. Please try again.',
+      data: reportTypes
     };
   }
-};
-
-// Generate a new report
-export const generateReport = async (
-  type: string,
-  params: {
+  
+  /**
+   * Generate a new report
+   */
+  async generateReport(params: { 
+    type: string; 
+    format: 'PDF' | 'CSV';
     startDate?: string;
     endDate?: string;
-    format: 'PDF' | 'CSV';
-    [key: string]: any;
-  }
-): Promise<ApiResponse<Report>> => {
-  // Simulate network delay (report generation takes time)
-  await new Promise(resolve => setTimeout(resolve, 1500));
-
-  try {
-    // Validate report type
-    if (!reportTypes.includes(type)) {
-      return {
-        success: false,
-        error: `Invalid report type: ${type}`,
-      };
+  }): Promise<ApiResponse<Report>> {
+    if (API_ENABLED) {
+      return apiClient.post<Report>('/reports', params);
     }
-
-    // Format dates for the report name
-    const startDateStr = params.startDate 
-      ? new Date(params.startDate).toISOString().slice(0, 10) 
-      : '';
-    const endDateStr = params.endDate
-      ? new Date(params.endDate).toISOString().slice(0, 10)
-      : '';
     
-    // Create a unique filename
-    let filename = type.replace(/\s+/g, '_');
-    if (startDateStr && endDateStr) {
-      filename += `_${startDateStr}_to_${endDateStr}`;
-    } else if (startDateStr) {
-      filename += `_from_${startDateStr}`;
-    } else if (endDateStr) {
-      filename += `_until_${endDateStr}`;
-    } else {
-      // If no date range, use current month/year
-      const now = new Date();
-      const month = now.toLocaleString('en-US', { month: 'short' });
-      const year = now.getFullYear();
-      filename += `_${month}_${year}`;
-    }
-
-    // Add a random suffix to ensure uniqueness
-    const randomSuffix = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    filename += `_${randomSuffix}`;
-
+    // Mock implementation
+    const { type, format, startDate, endDate } = params;
+    
+    // Generate a report name
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    
+    const nameType = type.replace(/\s+/g, '_');
+    const reportName = `${nameType}_${year}_${month}_${day}`;
+    
     const newReport: Report = {
-      id: getNextId(reports),
-      name: filename,
-      generatedOn: getCurrentTimestamp(),
-      type: type,
-      format: params.format,
-      url: `/reports/${filename}.${params.format.toLowerCase()}`,
+      id: Math.max(...mockReports.map(r => r.id), 0) + 1,
+      name: reportName,
+      generatedOn: new Date().toISOString(),
+      type,
+      format,
+      url: `/reports/${reportName}.${format.toLowerCase()}`
     };
-
-    reports.push(newReport);
-
-    // Log activity
-    logReportActivity('Generated Report', `Generated "${type}" Report (${params.format})`);
-
+    
+    mockReports.push(newReport);
+    
     return {
       success: true,
-      data: newReport,
-    };
-  } catch (error) {
-    console.error('Error generating report:', error);
-    return {
-      success: false,
-      error: 'Failed to generate report. Please try again.',
+      data: { ...newReport }
     };
   }
-};
-
-// Download a report (in a real app, this would return a file)
-export const downloadReport = async (id: number): Promise<ApiResponse<string>> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-
-  try {
-    const report = reports.find(r => r.id === id);
-
-    if (!report) {
+  
+  /**
+   * Delete a report
+   */
+  async deleteReport(id: number): Promise<ApiResponse<{ message: string, id: number }>> {
+    if (API_ENABLED) {
+      return apiClient.delete<{ message: string, id: number }>(`/reports/${id}`);
+    }
+    
+    // Mock implementation
+    const reportIndex = mockReports.findIndex(r => r.id === id);
+    
+    if (reportIndex === -1) {
       return {
         success: false,
-        error: `Report with ID ${id} not found.`,
+        error: 'Report not found'
       };
     }
-
-    // Log activity
-    logReportActivity('Downloaded Report', `Downloaded "${report.name}"`);
-
-    // In a real implementation, this would generate a file stream
-    // Here we just return the URL
+    
+    mockReports.splice(reportIndex, 1);
+    
     return {
       success: true,
-      data: report.url,
-    };
-  } catch (error) {
-    console.error(`Error downloading report ${id}:`, error);
-    return {
-      success: false,
-      error: 'Failed to download report. Please try again.',
+      data: {
+        message: 'Report deleted successfully',
+        id
+      }
     };
   }
-};
+}
 
-// Delete a report
-export const deleteReport = async (id: number): Promise<ApiResponse<void>> => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 300));
-
-  try {
-    const index = reports.findIndex(r => r.id === id);
-
-    if (index === -1) {
-      return {
-        success: false,
-        error: `Report with ID ${id} not found.`,
-      };
-    }
-
-    const reportName = reports[index].name;
-    reports = reports.filter(r => r.id !== id);
-
-    // Log activity
-    logReportActivity('Deleted Report', `Deleted report "${reportName}"`);
-
-    return {
-      success: true,
-    };
-  } catch (error) {
-    console.error(`Error deleting report ${id}:`, error);
-    return {
-      success: false,
-      error: 'Failed to delete report. Please try again.',
-    };
-  }
-};
-
-// Reset reports to default (for testing purposes)
-export const resetReports = () => {
-  reports = [...mockReports];
-}; 
+export const reportService = new ReportService(); 

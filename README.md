@@ -1,36 +1,79 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LucaM Camera Management System
 
-## Getting Started
+A modern, responsive web application for managing IP cameras. Built with Next.js, TypeScript, and Material UI.
 
-First, run the development server:
+## Features
+
+- **Authentication** - Secure JWT-based authentication system
+- **Camera Management** - Add, edit, delete, and view IP cameras
+- **User Management** - Manage users with different role permissions
+- **Role-Based Access Control** - Different functionality for Admins vs. Viewers
+- **Responsive UI** - Works on desktop and mobile devices
+
+## Project Setup
+
+### Prerequisites
+
+- Node.js 14+ and npm/yarn
+
+### Installation
+
+1. Clone the repository
+2. Install dependencies:
+
+```bash
+npm install
+# or
+yarn install
+```
+
+3. Run the development server:
 
 ```bash
 npm run dev
 # or
 yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+4. Open [http://localhost:3000](http://localhost:3000) in your browser
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Demo Credentials
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Admin: `admin` / `admin123`
+- Viewer: `user` / `user123`
 
-## Learn More
+## Project Structure
 
-To learn more about Next.js, take a look at the following resources:
+```
+src/
+├── components/        # React components
+│   ├── layout/        # Layout components
+│   └── ui/            # Reusable UI components
+├── contexts/          # React contexts (Auth, etc.)
+├── pages/             # Next.js pages
+│   ├── api/           # API routes
+│   ├── cameras/       # Camera management pages
+│   ├── users/         # User management pages
+│   └── _app.tsx       # App component
+├── services/          # Service layer
+│   └── api/           # API services
+└── styles/            # Global styles
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Development Notes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- The application uses a hybrid approach with mock data for development but can connect to a real API in production
+- To enable real API calls, set `API_ENABLED = true` in the service files
+- The authentication system is currently using mock data but is designed to work with a real backend
 
-## Deploy on Vercel
+## API Documentation
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+See [API_DOCS.md](./API_DOCS.md) for detailed API documentation including:
+- Authentication endpoints
+- Camera management endpoints 
+- Request/response formats
+- Error handling
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## License
+
+[MIT](LICENSE)
