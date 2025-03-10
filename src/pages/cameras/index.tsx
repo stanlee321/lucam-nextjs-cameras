@@ -159,8 +159,15 @@ export default function CamerasPage() {
       console.log('Camera fetch response:', response);
       
       if (response.success && response.data) {
-        setCameras(response.data.data);
-        setTotalCameras(response.data.total);
+        // Check if we have a valid data array
+        if (response.data.data && Array.isArray(response.data.data)) {
+          setCameras(response.data.data);
+          setTotalCameras(response.data.total);
+        } else {
+          console.error('Invalid camera data format:', response.data);
+          setError('Received invalid camera data from server');
+          setCameras([]);
+        }
       } else {
         // Check for auth errors
         if (response.error?.toLowerCase().includes('auth') ||

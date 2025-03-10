@@ -1,35 +1,14 @@
-import { useState } from 'react';
+import { Breadcrumbs, Typography, Button, TextField, Box, Checkbox, FormControlLabel, CircularProgress, Alert, Paper, FormHelperText } from '@mui/material';
+import Home from '@mui/icons-material/Home';
+import Videocam from '@mui/icons-material/Videocam';
 import { useRouter } from 'next/router';
-import {
-  Typography,
-  Box,
-  Paper,
-  TextField,
-  Switch,
-  FormControlLabel,
-  Button,
-  Grid,
-  Divider,
-  Breadcrumbs,
-  Link as MuiLink,
-  Snackbar,
-  Alert,
-  CircularProgress,
-} from '@mui/material';
-import { 
-  Save as SaveIcon, 
-  Cancel as CancelIcon,
-  Videocam as CameraIcon,
-  Home as HomeIcon,
-  Add as AddIcon,
-} from '@mui/icons-material';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { cameraService } from '@/services/api';
+import { authService } from '@/services/api/authService';
 
 export default function NewCameraPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   
   // Camera form state
   const [camera, setCamera] = useState({
@@ -37,303 +16,251 @@ export default function NewCameraPage() {
     location: '',
     ipAddress: '',
     port: '554', // Default RTSP port
-    active: true,
-    notes: '',
+    active: true
   });
   
-  // Form validation
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  
-  // Handle input change
+  // Form state
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Handle input changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
+    
     setCamera(prev => ({
       ...prev,
-      [name]: type === 'checkbox' 
-        ? checked 
-        : name === 'port' 
-          ? value === '' ? '' : Number(value) // Convert port to number, but allow empty string for validation
-          : value,
+      [name]: type === 'checkbox' ? checked : value
     }));
     
-    // Clear errors when typing
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
+    // Clear field error when user corrects it
+    if (formErrors[name]) {
+      setFormErrors(prev => {
+        const updatedErrors = { ...prev };
+        delete updatedErrors[name];
+        return updatedErrors;
+      });
     }
   };
   
-  // Validate form
-  const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {};
+  // Form validation
+  const validateForm = () => {
+    const errors: Record<string, string> = {};
     
     if (!camera.name.trim()) {
-      newErrors.name = 'Camera name is required';
+      errors.name = 'Name is required';
     }
     
     if (!camera.location.trim()) {
-      newErrors.location = 'Camera location is required';
+      errors.location = 'Location is required';
     }
     
     if (!camera.ipAddress.trim()) {
-      newErrors.ipAddress = 'IP address is required';
-    } else if (!/^(?:\d{1,3}\.){3}\d{1,3}$/.test(camera.ipAddress)) {
-      newErrors.ipAddress = 'Please enter a valid IP address (e.g., 192.168.1.1)';
+      errors.ipAddress = 'IP Address is required';
+    } else if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(camera.ipAddress)) {
+      errors.ipAddress = 'Invalid IP Address format';
     }
     
-    if (!camera.port.toString().trim()) {
-      newErrors.port = 'Port is required';
-    } else if (!/^\d+$/.test(camera.port.toString()) || parseInt(camera.port.toString()) < 1 || parseInt(camera.port.toString()) > 65535) {
-      newErrors.port = 'Please enter a valid port number (1-65535)';
+    if (!camera.port) {
+      errors.port = 'Port is required';
+    } else {
+      const portNum = parseInt(camera.port as string);
+      if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+        errors.port = 'Port must be a number between 1 and 65535';
+      }
     }
     
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    setFormErrors(errors);
+    return errors;
   };
   
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!validateForm()) {
-      return;
-    }
-    
     setLoading(true);
     setError(null);
     
+    // Validate form before submission
+    const errors = validateForm();
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      setLoading(false);
+      return;
+    }
+    
+    // Ensure we have a valid authentication token
+    const token = authService.getToken();
+    if (!token) {
+      setError('Authentication required. Please log in again.');
+      setLoading(false);
+      return;
+    }
+    
     try {
-      // Ensure port is a number
-      const cameraToSubmit = {
+      // Convert port to number if it's a string
+      const cameraData = {
         ...camera,
-        port: typeof camera.port === 'string' ? Number(camera.port) : camera.port
+        port: camera.port ? (typeof camera.port === 'string' ? parseInt(camera.port) : camera.port) : 554
       };
       
-      console.log('Submitting camera data:', cameraToSubmit);
+      console.log('Creating camera with data:', cameraData);
       
-      // Create camera
-      const response = await cameraService.createCamera(cameraToSubmit);
+      const response = await cameraService.createCamera(cameraData);
       
-      console.log('Create camera response:', response);
-      
-      if (response.success) {
-        setError('Camera created successfully');
-        // Redirect to cameras page after a short delay
+      if (response.success && response.data) {
+        // Show success message and navigate back to cameras list
+        setSuccess('Camera created successfully');
+        
+        // Redirect to cameras list after a brief delay
         setTimeout(() => {
           router.push('/cameras');
         }, 1500);
       } else {
-        // Show detailed error message from API
-        const errorMessage = response.error || 'Failed to create camera';
-        setError(errorMessage);
-        
-        // If it's a port-related error, set a specific field error
-        if (errorMessage.toLowerCase().includes('port')) {
-          setErrors(prev => ({ 
-            ...prev, 
-            port: 'Invalid port format. Must be a number between 1-65535.'
-          }));
-        }
+        setError(response.error || 'Failed to create camera');
       }
     } catch (err) {
-      console.error('Error in handle submit:', err);
-      setError('An unexpected error occurred');
+      console.error('Error creating camera:', err);
+      setError('An error occurred while creating the camera');
     } finally {
       setLoading(false);
     }
   };
-  
-  // Cancel and return to cameras list
-  const handleCancel = () => {
-    router.push('/cameras');
-  };
-  
+
   return (
-    <>
-      <Box sx={{ mb: 4 }}>
-        <Breadcrumbs aria-label="breadcrumb">
-          <Link href="/" passHref legacyBehavior>
-            <MuiLink 
-              sx={{ display: 'flex', alignItems: 'center' }}
-              color="inherit"
-              underline="hover"
-            >
-              <HomeIcon sx={{ mr: 0.5 }} fontSize="small" />
-              Dashboard
-            </MuiLink>
-          </Link>
-          <Link href="/cameras" passHref legacyBehavior>
-            <MuiLink
-              sx={{ display: 'flex', alignItems: 'center' }}
-              color="inherit"
-              underline="hover"
-            >
-              <CameraIcon sx={{ mr: 0.5 }} fontSize="small" />
-              Cameras
-            </MuiLink>
-          </Link>
+    <Box sx={{ p: 3 }}>
+      {/* Breadcrumbs */}
+      <Breadcrumbs aria-label="breadcrumb" sx={{ mb: 3 }}>
+        <Link href="/" passHref>
           <Typography
-            sx={{ display: 'flex', alignItems: 'center' }}
-            color="text.primary"
+            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'text.secondary' }}
+            component="a"
           >
-            <AddIcon sx={{ mr: 0.5 }} fontSize="small" />
-            Add Camera
+            <Home sx={{ mr: 0.5 }} fontSize="small" />
+            Dashboard
           </Typography>
-        </Breadcrumbs>
-        
-        <Typography variant="h4" component="h1" sx={{ mt: 2 }}>
-          Add New Camera
+        </Link>
+        <Link href="/cameras" passHref>
+          <Typography
+            sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'text.secondary' }}
+            component="a"
+          >
+            <Videocam sx={{ mr: 0.5 }} fontSize="small" />
+            Cameras
+          </Typography>
+        </Link>
+        <Typography
+          sx={{ display: 'flex', alignItems: 'center' }}
+          color="text.primary"
+        >
+          New Camera
         </Typography>
-      </Box>
+      </Breadcrumbs>
       
-      <Paper 
-        component="form" 
-        onSubmit={handleSubmit}
-        elevation={3} 
-        sx={{ p: 4 }}
-      >
-        <Grid container spacing={3}>
-          <Grid item xs={12}>
-            <Typography variant="h6" gutterBottom>
-              Camera Details
-            </Typography>
-            <Divider />
-          </Grid>
-          
-          {/* Camera Name */}
-          <Grid item xs={12} md={6}>
+      <Typography variant="h4" gutterBottom>
+        Add New Camera
+      </Typography>
+      
+      <Paper sx={{ p: 3, mt: 3 }}>
+        {error && (
+          <Alert severity="error" sx={{ mb: 3 }}>
+            {error}
+          </Alert>
+        )}
+        
+        {success && (
+          <Alert severity="success" sx={{ mb: 3 }}>
+            {success}
+          </Alert>
+        )}
+        
+        <form onSubmit={handleSubmit}>
+          <Box sx={{ display: 'grid', gap: 2 }}>
             <TextField
-              name="name"
               label="Camera Name"
+              name="name"
               value={camera.name}
               onChange={handleChange}
-              fullWidth
               required
-              error={!!errors.name}
-              helperText={errors.name || 'Enter a descriptive name for the camera'}
+              fullWidth
+              error={!!formErrors.name}
+              helperText={formErrors.name}
               disabled={loading}
             />
-          </Grid>
-          
-          {/* Camera Location */}
-          <Grid item xs={12} md={6}>
+            
             <TextField
-              name="location"
               label="Location"
+              name="location"
               value={camera.location}
               onChange={handleChange}
-              fullWidth
               required
-              error={!!errors.location}
-              helperText={errors.location || 'Where is this camera installed?'}
+              fullWidth
+              error={!!formErrors.location}
+              helperText={formErrors.location}
               disabled={loading}
             />
-          </Grid>
-          
-          {/* IP Address */}
-          <Grid item xs={12} md={6}>
+            
             <TextField
-              name="ipAddress"
               label="IP Address"
+              name="ipAddress"
               value={camera.ipAddress}
               onChange={handleChange}
-              fullWidth
               required
-              error={!!errors.ipAddress}
-              helperText={errors.ipAddress || 'Example: 192.168.1.100'}
+              fullWidth
+              placeholder="192.168.1.100"
+              error={!!formErrors.ipAddress}
+              helperText={formErrors.ipAddress || "Camera's IP address on the network (e.g., 192.168.1.100)"}
               disabled={loading}
             />
-          </Grid>
-          
-          {/* Port */}
-          <Grid item xs={12} md={6}>
+            
             <TextField
-              name="port"
               label="Port"
+              name="port"
               value={camera.port}
               onChange={handleChange}
-              fullWidth
               required
-              type="number" // Ensure we're using number input
-              inputProps={{ min: 1, max: 65535 }} // Add min/max constraints
-              error={!!errors.port}
-              helperText={errors.port || 'Default RTSP port: 554 (must be a number)'}
+              fullWidth
+              placeholder="554"
+              error={!!formErrors.port}
+              helperText={formErrors.port || "RTSP port (default: 554)"}
               disabled={loading}
             />
-          </Grid>
-          
-          {/* Status */}
-          <Grid item xs={12} md={6}>
+            
             <FormControlLabel
               control={
-                <Switch
+                <Checkbox
                   name="active"
                   checked={camera.active}
                   onChange={handleChange}
-                  color="success"
                   disabled={loading}
                 />
               }
-              label={camera.active ? 'Active' : 'Inactive'}
+              label="Active"
             />
-            <Typography variant="body2" color="text.secondary">
-              {camera.active 
-                ? 'Camera will be operational immediately' 
-                : 'Camera will be added but set to inactive state'}
-            </Typography>
-          </Grid>
-          
-          {/* Notes (Optional) */}
-          <Grid item xs={12}>
-            <TextField
-              name="notes"
-              label="Notes (Optional)"
-              value={camera.notes}
-              onChange={handleChange}
-              fullWidth
-              multiline
-              rows={3}
-              helperText="Add any additional information about this camera"
-              disabled={loading}
-            />
-          </Grid>
-          
-          {/* Form Actions */}
-          <Grid item xs={12}>
-            <Divider sx={{ mb: 2 }} />
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+            
+            <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
               <Button
                 variant="outlined"
-                startIcon={<CancelIcon />}
-                onClick={handleCancel}
+                color="secondary"
+                onClick={() => router.push('/cameras')}
                 disabled={loading}
               >
                 Cancel
               </Button>
+              
               <Button
                 type="submit"
                 variant="contained"
                 color="primary"
-                startIcon={loading ? <CircularProgress size={20} /> : <SaveIcon />}
                 disabled={loading}
+                startIcon={loading ? <CircularProgress size={20} color="inherit" /> : null}
               >
-                {loading ? 'Saving...' : 'Save Camera'}
+                {loading ? 'Creating...' : 'Create Camera'}
               </Button>
             </Box>
-          </Grid>
-        </Grid>
+          </Box>
+        </form>
       </Paper>
-      
-      {/* Error Snackbar */}
-      <Snackbar
-        open={!!error}
-        autoHideDuration={6000}
-        onClose={() => setError(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert onClose={() => setError(null)} severity="error" sx={{ width: '100%' }}>
-          {error}
-        </Alert>
-      </Snackbar>
-    </>
+    </Box>
   );
 } 

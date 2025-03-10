@@ -39,8 +39,17 @@ class CameraService {
         }
       }
       
-      // Get auth token directly from authService
-      const token = authService.getToken();
+      // IMPORTANT: Get auth token directly from localStorage to avoid any issues
+      let token = null;
+      
+      // First try from authService
+      token = authService.getToken();
+      
+      // Backup: try directly from localStorage if we're in a browser
+      if (!token && typeof window !== 'undefined') {
+        token = localStorage.getItem('lucam_auth_token');
+        console.log(`[CAMERA SERVICE] Got token directly from localStorage: ${!!token}`);
+      }
       
       // Set up headers with auth token
       const headers: HeadersInit = {
@@ -52,13 +61,21 @@ class CameraService {
         headers['Authorization'] = `Bearer ${token}`;
         console.log(`[CAMERA SERVICE] Adding auth header for ${method} ${endpoint}`);
         console.log(`[CAMERA SERVICE] Token length: ${token.length}`);
-        console.log(`[CAMERA SERVICE] Auth header: Bearer ${token.substring(0, 15)}...`);
+        console.log(`[CAMERA SERVICE] Auth header: Bearer ${token.substring(0, 20)}...`);
       } else {
         console.error(`[CAMERA SERVICE] No auth token available for ${method} ${endpoint}`);
-        return { 
-          success: false, 
-          error: 'Authentication required for camera operations' 
-        };
+        
+        // Special handling: try to get the token from localStorage directly
+        const localStorageToken = typeof window !== 'undefined' ? localStorage.getItem('lucam_auth_token') : null;
+        if (localStorageToken) {
+          console.log('[CAMERA SERVICE] Found token in localStorage, using it');
+          headers['Authorization'] = `Bearer ${localStorageToken}`;
+        } else {
+          return { 
+            success: false, 
+            error: 'Authentication required for camera operations' 
+          };
+        }
       }
       
       // Set up request options
@@ -76,57 +93,130 @@ class CameraService {
       
       // Make the request
       console.log(`[CAMERA SERVICE] Making ${method} request to ${fullUrl}`);
-      const response = await fetch(fullUrl, options);
-      console.log(`[CAMERA SERVICE] Response status: ${response.status}`);
-      
-      // Get the response text
-      const text = await response.text();
-      console.log(`[CAMERA SERVICE] Raw response (first 100 chars): ${text.substring(0, 100)}`);
-      
-      if (!response.ok) {
-        // Handle auth errors
-        if (response.status === 401) {
-          console.error('[CAMERA SERVICE] Authentication failed (401)');
-          return {
-            success: false,
-            error: 'Authentication required. Please log in again.'
-          };
-        }
-        
-        // Try to parse the error response
-        try {
-          const errorData = JSON.parse(text);
-          return {
-            success: false,
-            error: errorData.error || `HTTP error ${response.status}: ${response.statusText}`
-          };
-        } catch (e) {
-          // If not JSON, use the text
-          return {
-            success: false,
-            error: text || `HTTP error ${response.status}: ${response.statusText}`
-          };
-        }
-      }
-      
-      // Parse response
-      if (!text) {
-        return { success: false, error: 'Empty response from server' };
-      }
+      console.log(`[CAMERA SERVICE] Headers:`, headers);
       
       try {
-        const responseData = JSON.parse(text);
-        console.log(`[CAMERA SERVICE] Parsed response:`, {
-          success: responseData.success,
-          hasData: !!responseData.data,
-          error: responseData.error
+        // Add timeout to the fetch request
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+        const response = await fetch(fullUrl, {
+          ...options,
+          signal: controller.signal
         });
-        return responseData;
-      } catch (e) {
-        console.error('[CAMERA SERVICE] Error parsing JSON:', e);
+
+        clearTimeout(timeoutId);
+        
+        console.log(`[CAMERA SERVICE] Response status: ${response.status}`);
+        
+        // Get the response text
+        const text = await response.text();
+        console.log(`[CAMERA SERVICE] Raw response:`, text);
+        
+        if (!response.ok) {
+          // Handle auth errors
+          if (response.status === 401) {
+            console.error('[CAMERA SERVICE] Authentication failed (401)');
+            return {
+              success: false,
+              error: 'Authentication required. Please log in again.'
+            };
+          }
+          
+          // Try to parse the error response
+          try {
+            const errorData = JSON.parse(text);
+            return {
+              success: false,
+              error: errorData.error || errorData.message || `HTTP error ${response.status}: ${response.statusText}`
+            };
+          } catch (e) {
+            // If not JSON, use the text
+            return {
+              success: false,
+              error: text || `HTTP error ${response.status}: ${response.statusText}`
+            };
+          }
+        }
+        
+        // Parse response
+        if (!text) {
+          return { success: false, error: 'Empty response from server' };
+        }
+        
+        try {
+          const responseData = JSON.parse(text);
+          console.log(`[CAMERA SERVICE] Parsed response:`, responseData);
+          
+          // Handle the nested response structure
+          if (responseData.success === true && responseData.data !== undefined) {
+            // This is the structure from your API: { success: true, data: { ... } }
+            return {
+              success: true,
+              data: responseData.data as T
+            };
+          } else if (Array.isArray(responseData)) {
+            // Direct array response
+            return {
+              success: true,
+              data: responseData as T
+            };
+          } else if (typeof responseData === 'object' && !('error' in responseData)) {
+            // Direct object response
+            return {
+              success: true,
+              data: responseData as T
+            };
+          } else if (responseData.error) {
+            // Error response
+            return {
+              success: false,
+              error: responseData.error
+            };
+          } else {
+            // Unknown format
+            console.error('[CAMERA SERVICE] Unexpected response format:', responseData);
+            return {
+              success: false,
+              error: 'Invalid response format from server'
+            };
+          }
+        } catch (e) {
+          console.error('[CAMERA SERVICE] Error parsing JSON:', e);
+          return {
+            success: false,
+            error: 'Invalid JSON response from server'
+          };
+        }
+      } catch (error: any) {
+        // Enhanced error logging
+        console.error('[CAMERA SERVICE] Network error details:', {
+          error: error.message,
+          type: error.name,
+          url: fullUrl,
+          isAbortError: error.name === 'AbortError',
+          stack: error.stack
+        });
+
+        // Check if it's a timeout
+        if (error.name === 'AbortError') {
+          return {
+            success: false,
+            error: 'Request timed out. Please check your connection and try again.'
+          };
+        }
+
+        // Check if it's a network error
+        if (error.message.includes('Failed to fetch')) {
+          return {
+            success: false,
+            error: 'Unable to connect to the server. Please check your network connection and ensure the API server is running.'
+          };
+        }
+
         return {
           success: false,
-          error: 'Invalid JSON response from server'
+          error: error.message || 'An unexpected network error occurred'
         };
       }
     } catch (error: any) {
@@ -145,12 +235,74 @@ class CameraService {
     if (API_ENABLED) {
       try {
         // Use direct API request to avoid potential circular dependency issues
-        return await this.directApiRequest<PaginatedResponse<Camera>>(
+        const response = await this.directApiRequest<any>(
           'GET',
           '/cameras',
           undefined,
           filters
         );
+
+        if (response.success && response.data) {
+          console.log('[CAMERA SERVICE] Cameras response data:', response.data);
+          
+          // Handle the nested data structure
+          if (response.data.data && Array.isArray(response.data.data)) {
+            // Map the snake_case properties to camelCase
+            const mappedCameras = response.data.data.map((camera: any) => ({
+              id: camera.id,
+              name: camera.name,
+              location: camera.location,
+              active: camera.active,
+              ipAddress: camera.ip_address,
+              port: camera.port,
+              lastSeen: camera.last_seen,
+              // Include any other properties needed
+              createdAt: camera.created_at,
+              updatedAt: camera.updated_at
+            }));
+
+            return {
+              success: true,
+              data: {
+                data: mappedCameras,
+                total: response.data.total || mappedCameras.length,
+                page: response.data.page || filters?.page || 1,
+                limit: response.data.limit || filters?.limit || 10
+              }
+            };
+          } else if (Array.isArray(response.data)) {
+            // If it's a direct array, map and wrap it
+            const mappedCameras = response.data.map((camera: any) => ({
+              id: camera.id,
+              name: camera.name,
+              location: camera.location,
+              active: camera.active, 
+              ipAddress: camera.ip_address,
+              port: camera.port,
+              lastSeen: camera.last_seen,
+              // Include any other properties needed
+              createdAt: camera.created_at,
+              updatedAt: camera.updated_at
+            }));
+
+            return {
+              success: true,
+              data: {
+                data: mappedCameras,
+                total: mappedCameras.length,
+                page: filters?.page || 1,
+                limit: filters?.limit || mappedCameras.length
+              }
+            };
+          }
+        }
+        
+        // If we get here, something went wrong with the response format
+        console.error('[CAMERA SERVICE] Invalid response format:', response);
+        return {
+          success: false,
+          error: response.error || 'Invalid response format from server'
+        };
       } catch (error) {
         console.error('Error fetching cameras:', error);
         return {
@@ -240,8 +392,16 @@ class CameraService {
   async createCamera(cameraData: Partial<Camera>): Promise<ApiResponse<Camera>> {
     if (API_ENABLED) {
       try {
-        // Use direct API request
-        // Convert camelCase to snake_case for API
+        // Ensure we have an authentication token
+        const token = authService.getToken();
+        if (!token) {
+          return {
+            success: false,
+            error: 'Authentication required to create a camera'
+          };
+        }
+
+        // Format data for API (convert camelCase to snake_case)
         const formattedData = {
           name: cameraData.name,
           location: cameraData.location,
@@ -250,12 +410,39 @@ class CameraService {
           port: typeof cameraData.port === 'string' ? parseInt(cameraData.port) : cameraData.port || 554,
         };
         
-        return await this.directApiRequest<Camera>(
+        console.log('[CAMERA SERVICE] Creating camera with formatted data:', formattedData);
+        
+        // Use direct API request
+        const response = await this.directApiRequest<any>(
           'POST',
           '/cameras',
           formattedData,
           undefined
         );
+        
+        console.log('[CAMERA SERVICE] Create camera response:', response);
+        
+        if (response.success && response.data) {
+          // Map the snake_case response to camelCase for our frontend
+          const mappedCamera = {
+            id: response.data.id,
+            name: response.data.name,
+            location: response.data.location,
+            active: response.data.active,
+            ipAddress: response.data.ip_address,
+            port: response.data.port,
+            lastSeen: response.data.last_seen,
+            createdAt: response.data.created_at,
+            updatedAt: response.data.updated_at
+          };
+          
+          return {
+            success: true,
+            data: mappedCamera as Camera
+          };
+        }
+        
+        return response;
       } catch (error) {
         console.error('Error creating camera:', error);
         return {
@@ -291,7 +478,15 @@ class CameraService {
   async updateCamera(id: number, cameraData: Partial<Camera>): Promise<ApiResponse<Camera>> {
     if (API_ENABLED) {
       try {
-        // Use direct API request
+        // Ensure we have an authentication token
+        const token = authService.getToken();
+        if (!token) {
+          return {
+            success: false,
+            error: 'Authentication required to update a camera'
+          };
+        }
+        
         // Convert camelCase to snake_case for API
         const formattedData: Record<string, any> = {};
         
@@ -305,12 +500,39 @@ class CameraService {
             : cameraData.port;
         }
         
-        return await this.directApiRequest<Camera>(
+        console.log(`[CAMERA SERVICE] Updating camera ${id} with data:`, formattedData);
+        
+        // Use direct API request
+        const response = await this.directApiRequest<any>(
           'PUT',
           `/cameras/${id}`,
           formattedData,
           undefined
         );
+        
+        console.log(`[CAMERA SERVICE] Update camera response:`, response);
+        
+        if (response.success && response.data) {
+          // Map the snake_case response to camelCase for our frontend
+          const mappedCamera = {
+            id: response.data.id,
+            name: response.data.name,
+            location: response.data.location,
+            active: response.data.active,
+            ipAddress: response.data.ip_address,
+            port: response.data.port,
+            lastSeen: response.data.last_seen,
+            createdAt: response.data.created_at,
+            updatedAt: response.data.updated_at
+          };
+          
+          return {
+            success: true,
+            data: mappedCamera as Camera
+          };
+        }
+        
+        return response;
       } catch (error) {
         console.error(`Error updating camera with ID ${id}:`, error);
         return {
