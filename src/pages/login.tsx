@@ -34,7 +34,12 @@ export default function LoginPage() {
   
   // If already authenticated, redirect to dashboard
   useEffect(() => {
+    // Skip during SSR
+    if (typeof window === 'undefined') return;
+
+    // If we're already authenticated and not in loading state
     if (isAuthenticated && !authLoading) {
+      console.log('Already authenticated, redirecting from login');
       const returnUrl = router.query.returnUrl as string || '/';
       router.push(returnUrl);
     }
@@ -73,12 +78,18 @@ export default function LoginPage() {
     }
     
     try {
+      console.log('Submitting login form');
       const success = await login(username, password);
+      
+      console.log('Login result:', success);
       
       if (success) {
         // Get the return URL from query parameters or default to dashboard
         const returnUrl = router.query.returnUrl as string || '/';
-        router.push(returnUrl);
+        console.log('Login successful, redirecting to', returnUrl);
+        
+        // Use router.replace instead of push to avoid adding to history
+        router.replace(returnUrl);
       } else {
         setError(authError || 'Login failed. Please check your credentials.');
       }
@@ -209,11 +220,11 @@ export default function LoginPage() {
             
             <Box sx={{ mt: 3, textAlign: 'center' }}>
               <Typography variant="body2" color="text.secondary">
-                Demo Credentials:
+                API Credentials (from documentation):
               </Typography>
               <Typography variant="body2" sx={{ mt: 1 }}>
-                Admin: <strong>admin / admin123</strong><br />
-                Viewer: <strong>user / user123</strong>
+                Admin: <strong>admin / adminpass</strong><br />
+                User: <strong>user / userpass</strong>
               </Typography>
             </Box>
           </Box>

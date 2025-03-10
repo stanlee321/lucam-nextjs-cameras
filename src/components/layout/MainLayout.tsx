@@ -11,17 +11,20 @@ interface MainLayoutProps {
 }
 
 export default function MainLayout({ children }: MainLayoutProps) {
-  const router = useRouter();
   const { isAuthenticated, loading } = useAuth();
   const [mounted, setMounted] = useState(false);
   
-  // Client-side only effect
+  // Mark component as mounted on client side
   useEffect(() => {
     setMounted(true);
-  }, []);
+    console.log('MainLayout mounted, auth state:', { 
+      isAuthenticated, 
+      loading,
+      pathname: window.location.pathname,
+    });
+  }, [isAuthenticated, loading]);
   
-  // If not mounted yet, render a simple container
-  // This prevents hydration errors
+  // If not mounted yet, render a simple container to avoid hydration errors
   if (!mounted) {
     return (
       <Box sx={{ display: 'flex' }}>
@@ -41,7 +44,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
     );
   }
   
-  // If loading auth state on client, show loading spinner
+  // If still loading, show a spinner
   if (loading) {
     return (
       <Box sx={{ 
@@ -55,6 +58,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
     );
   }
   
+  // For authenticated users, show the full layout
   return (
     <Box sx={{ display: 'flex' }}>
       <CssBaseline />

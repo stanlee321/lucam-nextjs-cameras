@@ -1,5 +1,4 @@
 import { ApiResponse } from './types';
-import { authService } from './authService';
 import { convertToSnakeCase, convertToCamelCase } from './utils';
 
 // Get environment variables
@@ -12,6 +11,28 @@ const BASE_URL = `${API_URL}/${API_VERSION}`;
 
 // Check if we're in the browser environment
 const isBrowser = typeof window !== 'undefined';
+
+// Keep track of the current auth token
+let currentAuthToken: string | null = null;
+
+// We'll load this later - NOT at module load time
+// to avoid circular dependencies
+let authService: any = null;
+
+// Initialize the API client with the auth service
+export function initApiClient(authServiceInstance: any) {
+  authService = authServiceInstance;
+  
+  // Now we can safely get the token
+  if (isBrowser && authService) {
+    try {
+      currentAuthToken = authService.getToken();
+      console.log('API client initialized with auth token:', !!currentAuthToken);
+    } catch (e) {
+      console.error('Error initializing API client:', e);
+    }
+  }
+}
 
 // Improve error message formatting to be more user-friendly
 function formatErrorMessage(errorText: string): string {
@@ -44,6 +65,29 @@ const request = async <T>(
   params?: any
 ): Promise<ApiResponse<T>> => {
   try {
+    // Special handling for camera endpoints
+    if (endpoint.startsWith('/cameras') && method !== 'GET') {
+      console.log('Performing camera write operation, checking auth...');
+      
+      // Always get a fresh token before camera operations
+      if (isBrowser && authService) {
+        currentAuthToken = authService.getToken();
+        
+        if (!currentAuthToken) {
+          console.error('No auth token available for camera operation');
+          return {
+            success: false,
+            error: 'Authentication required for this operation'
+          };
+        }
+      }
+    }
+    
+    // Always get a fresh token before each request
+    if (isBrowser && authService) {
+      currentAuthToken = authService.getToken();
+    }
+    
     // Build the complete URL with query parameters
     let fullUrl = `${BASE_URL}${endpoint}`;
     
@@ -69,12 +113,36 @@ const request = async <T>(
       'Content-Type': 'application/json',
     };
     
-    if (isBrowser) {
-      const token = authService.getToken();
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+    if (isBrowser && currentAuthToken) {
+      headers['Authorization'] = `Bearer ${currentAuthToken}`;
+      console.log(`Adding auth header for ${method} ${endpoint}`);
+    } else if (isBrowser && authService) {
+      console.warn(`No auth token available for ${method} ${endpoint}`);
+      
+      // Skip authentication for login endpoints
+      if (!endpoint.includes('/auth/login')) {
+        // Attempt to refresh authentication state
+        const isAuthenticated = authService.isAuthenticated();
+        if (!isAuthenticated) {
+          console.error('Not authenticated for API call');
+          
+          // Return early for protected endpoints
+          if (!endpoint.startsWith('/auth/')) {
+            return {
+              success: false,
+              error: 'Authentication required'
+            };
+          }
+        }
       }
     }
+    
+    // Log the request
+    console.log(`API ${method} request to ${endpoint}`, { 
+      hasAuthHeader: !!headers['Authorization'],
+      params,
+      hasData: !!data
+    });
     
     // Configure request options
     const options: RequestInit = {
@@ -98,11 +166,17 @@ const request = async <T>(
     // Handle different HTTP status codes
     if (!response.ok) {
       // Handle 401 Unauthorized errors
-      if (response.status === 401 && isBrowser) {
+      if (response.status === 401 && isBrowser && authService) {
         console.error('Authentication failed - redirecting to login');
         authService.logout();
+        
+        // Force page reload to login page
         window.location.href = '/login';
-        throw new Error('Authentication failed');
+        
+        return {
+          success: false,
+          error: 'Authentication required. Please log in again.'
+        };
       }
       
       // Try to parse error response
@@ -171,7 +245,6 @@ const request = async <T>(
         }
       }
       
-      // Return response in our standard format
       return responseData;
     } catch (parseError) {
       console.error('Error parsing JSON response:', parseError, 'Response text:', text);

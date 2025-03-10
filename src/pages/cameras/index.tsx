@@ -1,4 +1,5 @@
 import { useState, useEffect, ChangeEvent } from 'react';
+import { useRouter } from 'next/router';
 import {
   Typography,
   Box,
@@ -28,6 +29,7 @@ import {
   Alert,
   Breadcrumbs,
   Link as MuiLink,
+  CircularProgress,
 } from '@mui/material';
 import {
   Edit as EditIcon,
@@ -39,13 +41,13 @@ import {
 } from '@mui/icons-material';
 import Link from 'next/link';
 import { cameraService } from '@/services/api/cameraService';
+import { authService } from '@/services/api/authService'; // Direct import
 import { Camera } from '@/services/api/types';
 import { useAuth } from '../../contexts/AuthContext';
-import { useRouter } from 'next/router';
 
 export default function CamerasPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -60,13 +62,93 @@ export default function CamerasPage() {
   const [cameraToDelete, setCameraToDelete] = useState<Camera | null>(null);
   const [bulkActionDialogOpen, setBulkActionDialogOpen] = useState(false);
   const [bulkAction, setBulkAction] = useState<'enable' | 'disable' | null>(null);
+  const [pageInitialized, setPageInitialized] = useState(false);
+  const [authStatus, setAuthStatus] = useState<'checking' | 'authenticated' | 'failed'>('checking');
+
+  // Special authorization check for cameras page
+  useEffect(() => {
+    const checkAuth = async () => {
+      console.log('CamerasPage: Performing direct auth check...');
+      setAuthStatus('checking');
+      
+      // Direct check with authService, bypassing context
+      const isLoggedIn = authService.isAuthenticated();
+      console.log('CamerasPage direct auth check:', isLoggedIn);
+      
+      // If not logged in, redirect to login
+      if (!isLoggedIn) {
+        console.warn('CamerasPage: Not authenticated, redirecting to login');
+        setAuthStatus('failed');
+        
+        // Show error message before redirecting
+        setError('Authentication required. Please log in again.');
+        
+        // Delay redirect to show the error message
+        setTimeout(() => {
+          router.replace({
+            pathname: '/login',
+            query: { returnUrl: '/cameras' }
+          });
+        }, 2000);
+        return;
+      }
+      
+      // Verify token with API
+      try {
+        console.log('CamerasPage: Verifying token with API...');
+        const verifyResult = await authService.verifyToken();
+        
+        if (!verifyResult.success) {
+          console.error('CamerasPage: Token verification failed:', verifyResult.error);
+          setAuthStatus('failed');
+          setError('Authentication failed: ' + (verifyResult.error || 'Invalid token'));
+          
+          // Delay redirect to show the error message
+          setTimeout(() => {
+            router.replace({
+              pathname: '/login',
+              query: { returnUrl: '/cameras' }
+            });
+          }, 2000);
+          return;
+        }
+        
+        // If we're here, we're authenticated
+        console.log('CamerasPage: Token verified, user is authenticated');
+        setAuthStatus('authenticated');
+        setPageInitialized(true);
+      } catch (err) {
+        console.error('CamerasPage: Error during token verification:', err);
+        setAuthStatus('failed');
+        setError('Authentication error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      }
+    };
+    
+    checkAuth();
+  }, [router]);
 
   // Fetch cameras based on filters
   const fetchCameras = async () => {
+    console.log('Fetching cameras with filters:', {
+      page: page + 1,
+      limit: rowsPerPage,
+      search: searchTerm.trim() || undefined,
+      active: showInactive ? undefined : true,
+    });
+    
     setLoading(true);
     setError(null);
     
     try {
+      // Direct token check before fetching
+      const token = authService.getToken();
+      if (!token) {
+        console.error('No auth token available for camera fetch');
+        setError('Authentication required. Please log in again.');
+        setLoading(false);
+        return;
+      }
+      
       const response = await cameraService.getCameras({
         page: page + 1, // MUI Table uses 0-based index, API uses 1-based
         limit: rowsPerPage,
@@ -74,10 +156,27 @@ export default function CamerasPage() {
         active: showInactive ? undefined : true,
       });
       
+      console.log('Camera fetch response:', response);
+      
       if (response.success && response.data) {
         setCameras(response.data.data);
         setTotalCameras(response.data.total);
       } else {
+        // Check for auth errors
+        if (response.error?.toLowerCase().includes('auth') ||
+            response.error?.toLowerCase().includes('token') ||
+            response.error?.toLowerCase().includes('unauthorized')) {
+          console.error('Auth error in camera fetch:', response.error);
+          
+          // Check auth directly again
+          const isStillLoggedIn = authService.isAuthenticated();
+          if (!isStillLoggedIn) {
+            // Direct reload to login if token is invalid
+            window.location.href = '/login?returnUrl=/cameras';
+            return;
+          }
+        }
+        
         setError(response.error || 'Failed to fetch cameras');
         setCameras([]);
       }
@@ -90,10 +189,44 @@ export default function CamerasPage() {
     }
   };
 
-  // Initial load and when filters change
+  // Initial load and when filters change - only after page is initialized
   useEffect(() => {
-    fetchCameras();
-  }, [page, rowsPerPage, showInactive, searchTerm]);
+    if (pageInitialized) {
+      fetchCameras();
+    }
+  }, [page, rowsPerPage, showInactive, searchTerm, pageInitialized]);
+
+  // Main rendering logic
+  if (!pageInitialized || authLoading) {
+    return (
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          flexDirection: 'column',
+          justifyContent: 'center', 
+          alignItems: 'center',
+          height: '70vh',
+          gap: 2
+        }}
+      >
+        <CircularProgress size={60} />
+        <Typography variant="h6" color="primary">
+          {authStatus === 'checking' 
+            ? 'Verifying authentication...' 
+            : authStatus === 'failed' 
+            ? 'Authentication failed!' 
+            : 'Loading cameras...'}
+        </Typography>
+        {error && (
+          <Alert severity="error" sx={{ mt: 2, maxWidth: '80%' }}>
+            {error}
+          </Alert>
+        )}
+      </Box>
+    );
+  }
+  
+  // If we're here, we're authenticated and initialized
 
   // Handle search input
   const handleSearchChange = (event: ChangeEvent<HTMLInputElement>) => {

@@ -31,55 +31,65 @@ const baseTheme = createTheme({
 // Public routes that don't require authentication
 export const publicRoutes = ['/login'];
 
-// Auth guard component to handle protected routes
-function AuthGuard({ children }: { children: React.ReactNode }) {
+// Auth Route Guard
+function AuthRouteGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   
-  // This effect will only run on the client, after the component has mounted
+  // Only run client-side
   useEffect(() => {
     setMounted(true);
+  }, []);
+  
+  // Handle auth-based routing
+  useEffect(() => {
+    // Skip during SSR or if not mounted yet
+    if (!mounted) return;
     
     const currentPath = router.pathname;
-    const isPublicRoute = publicRoutes.some(route => 
-      currentPath === route || currentPath.startsWith(`${route}/`)
+    
+    console.log('AuthRouteGuard checking auth:', {
+      path: currentPath,
+      isAuthenticated,
+      loading,
+    });
+    
+    // Skip redirects during loading
+    if (loading) return;
+    
+    // Special handling for cameras page - ensure solid auth state
+    if (currentPath.startsWith('/cameras') && !loading && !isAuthenticated) {
+      console.warn('Not authenticated for cameras page, redirecting to login');
+      router.replace({
+        pathname: '/login',
+        query: { returnUrl: '/cameras' }
+      });
+      return;
+    }
+    
+    // Check if current path is a public route
+    const isPublicRoute = publicRoutes.some(
+      route => currentPath === route || currentPath.startsWith(`${route}/`)
     );
     
-    // If not loading and not authenticated and not on a public route, redirect to login
-    if (!loading && !isAuthenticated && !isPublicRoute) {
-      console.log('Redirecting to login from', currentPath);
-      router.push({
+    // Case 1: User is not authenticated but trying to access protected route
+    if (!isAuthenticated && !isPublicRoute) {
+      console.log(`Redirecting to login from ${currentPath}`);
+      router.replace({
         pathname: '/login',
         query: { returnUrl: router.asPath }
       });
     }
     
-    // If authenticated and on login page, redirect to dashboard
-    if (!loading && isAuthenticated && currentPath === '/login') {
-      router.push('/');
+    // Case 2: User is authenticated but trying to access login page
+    if (isAuthenticated && currentPath === '/login') {
+      console.log('Already authenticated, redirecting to dashboard');
+      router.replace('/');
     }
-  }, [isAuthenticated, loading, router]);
+  }, [isAuthenticated, loading, mounted, router]);
   
-  // Render a consistent initial state server and client
-  // Only conditionally render after mounting on client
-  if (!mounted) {
-    // During SSR and initial client render, just render children without checks
-    // This avoids hydration mismatch
-    return <>{children}</>;
-  }
-  
-  // After mounting on client, apply authentication logic
-  const currentPath = router.pathname;
-  const isPublicRoute = publicRoutes.some(route => 
-    currentPath === route || currentPath.startsWith(`${route}/`)
-  );
-  
-  // Show placeholder while loading or redirect happening
-  if (!isAuthenticated && !isPublicRoute && !loading) {
-    return null; // Don't render protected content while redirecting
-  }
-  
+  // Always render children - redirects happen in the effect
   return <>{children}</>;
 }
 
@@ -97,7 +107,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
         <CssBaseline />
         <AuthProvider>
           <ThemeProvider>
-            <AuthGuard>
+            <AuthRouteGuard>
               {isLoginPage ? (
                 <Component {...pageProps} />
               ) : (
@@ -105,7 +115,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
                   <Component {...pageProps} />
                 </MainLayout>
               )}
-            </AuthGuard>
+            </AuthRouteGuard>
           </ThemeProvider>
         </AuthProvider>
       </MuiThemeProvider>
