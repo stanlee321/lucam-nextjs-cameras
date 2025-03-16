@@ -25,6 +25,39 @@ export default function NewCameraPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
+  // Add useEffect to check auth status
+  useEffect(() => {
+    // Check authentication status when component mounts
+    const token = authService.getToken();
+    const user = authService.getUser();
+    const isAuth = authService.isAuthenticated();
+    
+    console.log('[CAMERA FORM] Auth status on mount:', {
+      isAuthenticated: isAuth,
+      hasToken: !!token,
+      tokenLength: token ? token.length : 0,
+      user: user ? {
+        id: user.id,
+        username: user.username,
+        role: user.role
+      } : null
+    });
+    
+    // If needed, verify token with API
+    const verifyToken = async () => {
+      try {
+        const result = await authService.verifyToken();
+        console.log('[CAMERA FORM] Token verification result:', result);
+      } catch (err) {
+        console.error('[CAMERA FORM] Token verification error:', err);
+      }
+    };
+    
+    if (token) {
+      verifyToken();
+    }
+  }, []);
+
   // Handle input changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -80,6 +113,7 @@ export default function NewCameraPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setSuccess(null);
     
     // Validate form before submission
     const errors = validateForm();
@@ -93,35 +127,78 @@ export default function NewCameraPage() {
     const token = authService.getToken();
     if (!token) {
       setError('Authentication required. Please log in again.');
+      setTimeout(() => {
+        router.push('/login?returnUrl=/cameras/new');
+      }, 2000);
+      setLoading(false);
+      return;
+    }
+    
+    // Check if user has admin privileges
+    const user = authService.getUser();
+    console.log('[CAMERA FORM] Current user:', user);
+    
+    if (!user || (user.role !== 'SuperAdmin' && user.role !== 'Admin')) {
+      setError('You do not have permission to create cameras. Admin access required.');
       setLoading(false);
       return;
     }
     
     try {
-      // Convert port to number if it's a string
+      // Format camera data according to API requirements
       const cameraData = {
         ...camera,
+        // Ensure port is sent as a number as required by the API
         port: camera.port ? (typeof camera.port === 'string' ? parseInt(camera.port) : camera.port) : 554
       };
       
-      console.log('Creating camera with data:', cameraData);
+      console.log('[CAMERA FORM] Submitting camera data:', cameraData);
+      console.log('[CAMERA FORM] Using token:', token.substring(0, 10) + '...');
       
       const response = await cameraService.createCamera(cameraData);
       
+      console.log('[CAMERA FORM] Create camera response:', response);
+      
       if (response.success && response.data) {
-        // Show success message and navigate back to cameras list
-        setSuccess('Camera created successfully');
+        // Show success message
+        setSuccess('Camera created successfully!');
         
         // Redirect to cameras list after a brief delay
         setTimeout(() => {
           router.push('/cameras');
         }, 1500);
       } else {
-        setError(response.error || 'Failed to create camera');
+        // Handle different error scenarios
+        if (response.error?.includes('Authentication required')) {
+          setError('Authentication error: ' + response.error);
+          // Redirect to login if authentication failed
+          setTimeout(() => {
+            router.push('/login?returnUrl=/cameras/new');
+          }, 2000);
+        } else if (response.error?.includes('permission')) {
+          setError('Permission error: ' + response.error);
+        } else if (response.error?.includes('port') || response.error?.includes('Port')) {
+          // Specific error for port issues
+          setFormErrors(prev => ({ 
+            ...prev, 
+            port: response.error || 'Invalid port format' 
+          }));
+          setError('Validation error: Please check the form fields.');
+        } else if (response.error?.includes('IP') || response.error?.includes('ip')) {
+          // Specific error for IP address issues
+          setFormErrors(prev => ({ 
+            ...prev, 
+            ipAddress: response.error || 'Invalid IP address format' 
+          }));
+          setError('Validation error: Please check the form fields.');
+        } else {
+          // Generic error
+          setError(response.error || 'Failed to create camera. Please try again.');
+        }
       }
     } catch (err) {
-      console.error('Error creating camera:', err);
-      setError('An error occurred while creating the camera');
+      console.error('[CAMERA FORM] Error creating camera:', err);
+      setError('An unexpected error occurred while creating the camera. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -261,6 +338,56 @@ export default function NewCameraPage() {
           </Box>
         </form>
       </Paper>
+
+      {/* Add a Debug button for admin users */}
+      {process.env.NEXT_PUBLIC_DEBUG_MODE === 'true' && (
+        <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+          <Typography variant="subtitle2" gutterBottom>Debug Options</Typography>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button 
+              size="small" 
+              variant="outlined" 
+              color="secondary"
+              onClick={async () => {
+                try {
+                  // Log current auth state
+                  const currentToken = authService.getToken();
+                  const currentUser = authService.getUser();
+                  console.log('Current auth state:', { currentToken: !!currentToken, currentUser });
+                  
+                  // Try admin login
+                  const response = await authService.login('admin', 'adminpass');
+                  console.log('Debug login result:', response);
+                  
+                  if (response.success) {
+                    setSuccess('Admin login successful! Refreshing page...');
+                    setTimeout(() => window.location.reload(), 1000);
+                  } else {
+                    setError('Admin login failed: ' + response.error);
+                  }
+                } catch (err) {
+                  console.error('Debug login error:', err);
+                  setError('Login error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+                }
+              }}
+            >
+              Login as Admin
+            </Button>
+            <Button 
+              size="small" 
+              variant="outlined" 
+              color="warning"
+              onClick={() => {
+                authService.logout();
+                setError('Logged out. Redirecting to login page...');
+                setTimeout(() => router.push('/login?returnUrl=/cameras/new'), 1500);
+              }}
+            >
+              Force Logout
+            </Button>
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 } 

@@ -1,0 +1,455 @@
+---
+description: API Docs
+globs: src/services/api/
+alwaysApply: false
+---
+
+The server will start at `http://127.0.0.1:8081`.
+
+## Configuration
+
+Configuration is loaded from:
+1. Default values
+2. Config files in the `config/` directory (based on the `RUN_ENV` environment variable)
+3. Environment variables prefixed with `APP_`
+
+Example configuration file (`config/development.toml`):
+```toml
+[server]
+host = "127.0.0.1"
+port = 8081
+
+[jwt]
+secret_key = "your_super_secret_key_change_this_in_production"
+expiration = 86400  # 24 hours in seconds
+
+[rate_limit]
+authenticated_rate = 60
+unauthenticated_rate = 10
+
+api_version = "v1"
+```
+
+## Project Structure
+
+```
+api_server/
+├── Cargo.toml              # Project dependencies
+├── src/
+│   ├── main.rs             # Application entry point
+│   ├── config/             # Configuration handling
+│   ├── handlers/           # Request handlers
+│   │   ├── auth/           # Authentication handlers
+│   │   └── cameras/        # Camera management handlers  
+│   ├── middleware/         # Custom middleware
+│   ├── models/             # Data models
+│   └── utils/              # Utilities
+├── config/                 # Configuration files
+└── TODO.md                 # Implementation tracking
+```
+
+## API Endpoints
+
+### Authentication
+
+- `POST /v1/auth/login` - Authenticate a user
+- `GET /v1/auth/verify` - Verify authentication token (protected)
+
+### Cameras
+
+- `GET /v1/cameras` - List all cameras (protected)
+- `GET /v1/cameras/{id}` - Get a specific camera (protected)
+- `POST /v1/cameras` - Create a new camera (admin only)
+- `PUT /v1/cameras/{id}` - Update a camera (admin only)
+- `DELETE /v1/cameras/{id}` - Delete a camera (admin only)
+- `PATCH /v1/cameras/bulk-update` - Update multiple cameras (admin only)
+
+### Other
+
+- `GET /health` - Check if the server is running
+
+## Authentication
+
+The API uses JWT tokens for authentication. Include the token in the `Authorization` header:
+
+```
+Authorization: Bearer <your_jwt_token>
+```
+
+## Error Codes
+
+| Status Code | Description                                      |
+|-------------|--------------------------------------------------|
+| 200         | OK - Request succeeded                           |
+| 201         | Created - Resource was created                   |
+| 400         | Bad Request - Invalid request data               |
+| 401         | Unauthorized - Authentication required           |
+| 403         | Forbidden - Insufficient permissions             |
+| 404         | Not Found - Resource not found                   |
+| 429         | Too Many Requests - Rate limit exceeded          |
+| 500         | Internal Server Error - Server error occurred    |
+
+## Testing All Endpoints
+
+Below are CURL commands to test all available endpoints. You can use these commands to verify that the API is working correctly.
+
+### Health Check
+
+Test the health check endpoint to verify the server is running:
+
+```bash
+curl http://127.0.0.1:8081/health
+```
+
+Expected response:
+```json
+{
+  "status": "ok",
+  "message": "Server is running"
+}
+```
+
+### Authentication
+
+#### Login as Admin
+
+First, login to get a JWT token:
+
+```bash
+curl -X POST http://127.0.0.1:8081/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "adminpass"}'
+```
+
+Expected response:
+```json
+{
+  "success": true,
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "id": 1,
+      "username": "admin",
+      "name": "Admin User",
+      "role": "SuperAdmin",
+      "email": "admin@example.com"
+    },
+    "expires_in": 86400
+  }
+}
+```
+
+Save the token for use in subsequent requests:
+```bash
+export TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+#### Login as Regular User
+
+```bash
+curl -X POST http://127.0.0.1:8081/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "user", "password": "userpass"}'
+```
+
+#### Login with Invalid Credentials
+
+```bash
+curl -X POST http://127.0.0.1:8081/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "unknown", "password": "wrongpass"}'
+```
+
+Expected response:
+```json
+{
+  "success": false,
+  "error": "Invalid username or password"
+}
+```
+
+#### Verify Token
+
+Verify the token is valid:
+
+```bash
+curl http://127.0.0.1:8081/v1/auth/verify \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Expected response:
+```json
+{
+  "success": true,
+  "data": {
+    "valid": true,
+    "user": {
+      "id": 1,
+      "username": "admin",
+      "name": "Admin User",
+      "role": "SuperAdmin",
+      "email": "admin@example.com"
+    }
+  }
+}
+```
+
+### Camera Management
+
+#### Get All Cameras
+
+Get a list of all cameras:
+
+```bash
+curl http://127.0.0.1:8081/v1/cameras \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Expected response:
+```json
+{
+  "success": true,
+  "data": {
+    "data": [
+      {
+        "id": 101,
+        "name": "Front Gate",
+        "location": "Entrance",
+        "active": true,
+        "ip_address": "192.168.1.101",
+        "port": 554,
+        "last_seen": "2023-03-09T15:30:45Z"
+      },
+      {
+        "id": 102,
+        "name": "Back Gate",
+        "location": "Rear Entrance",
+        "active": true,
+        "ip_address": "192.168.1.102",
+        "port": 554,
+        "last_seen": "2023-03-09T15:35:22Z"
+      }
+    ],
+    "total": 2,
+    "page": 1,
+    "limit": 10
+  }
+}
+```
+
+#### Get All Cameras with Pagination
+
+Get a specific page of cameras:
+
+```bash
+curl "http://127.0.0.1:8081/v1/cameras?page=1&limit=5" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+#### Get All Cameras with Filtering
+
+Filter cameras by search term:
+
+```bash
+curl "http://127.0.0.1:8081/v1/cameras?search=Front" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Filter cameras by active status:
+
+```bash
+curl "http://127.0.0.1:8081/v1/cameras?active=true" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+#### Get Camera by ID
+
+Get a specific camera by ID:
+
+```bash
+curl http://127.0.0.1:8081/v1/cameras/101 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Expected response:
+```json
+{
+  "success": true,
+  "data": {
+    "id": 101,
+    "name": "Front Gate",
+    "location": "Entrance",
+    "active": true,
+    "ip_address": "192.168.1.101",
+    "port": 554,
+    "last_seen": "2023-03-09T15:30:45Z"
+  }
+}
+```
+
+#### Get Non-existent Camera
+
+```bash
+curl http://127.0.0.1:8081/v1/cameras/999 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Expected response:
+```json
+{
+  "success": false,
+  "error": "Camera not found with id: 999"
+}
+```
+
+#### Create New Camera
+
+Create a new camera:
+
+```bash
+curl -X POST http://127.0.0.1:8081/v1/cameras \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "name": "New Camera",
+    "location": "Front Door",
+    "active": true,
+    "ip_address": "192.168.1.120",
+    "port": 554
+  }'
+```
+
+Expected response:
+```json
+{
+  "success": true,
+  "data": {
+    "id": 104,
+    "name": "New Camera",
+    "location": "Front Door",
+    "active": true,
+    "ip_address": "192.168.1.120",
+    "port": 554,
+    "last_seen": null
+  }
+}
+```
+
+#### Create Camera with Invalid Data
+
+```bash
+curl -X POST http://127.0.0.1:8081/v1/cameras \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "name": "",
+    "location": "Invalid",
+    "ip_address": "invalid-ip"
+  }'
+```
+
+#### Update Camera
+
+Update an existing camera:
+
+```bash
+curl -X PUT http://127.0.0.1:8081/v1/cameras/101 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "name": "Updated Front Gate",
+    "active": false
+  }'
+```
+
+Expected response:
+```json
+{
+  "success": true,
+  "data": {
+    "id": 101,
+    "name": "Updated Front Gate",
+    "location": "Entrance",
+    "active": false,
+    "ip_address": "192.168.1.101",
+    "port": 554,
+    "last_seen": "2023-03-09T15:30:45Z"
+  }
+}
+```
+
+#### Delete Camera
+
+Delete a camera:
+
+```bash
+curl -X DELETE http://127.0.0.1:8081/v1/cameras/103 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Expected response:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Camera deleted successfully",
+    "id": 103
+  }
+}
+```
+
+#### Bulk Update Cameras
+
+Update multiple cameras at once:
+
+```bash
+curl -X PATCH http://127.0.0.1:8081/v1/cameras/bulk-update \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "ids": [101, 102],
+    "updates": {
+      "active": true
+    }
+  }'
+```
+
+Expected response:
+```json
+{
+  "success": true,
+  "data": {
+    "updated": 2,
+    "cameras": [101, 102]
+  }
+}
+```
+
+### Testing Different User Roles
+
+For comprehensive testing, login with different user roles and attempt operations. For example:
+
+1. Login as regular user:
+```bash
+curl -X POST http://127.0.0.1:8081/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "user", "password": "userpass"}'
+```
+
+2. Save the token:
+```bash
+export USER_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+3. Try an admin-only operation (should fail with 403 Forbidden):
+```bash
+curl -X POST http://127.0.0.1:8081/v1/cameras \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -d '{
+    "name": "New Camera",
+    "location": "Front Door",
+    "ip_address": "192.168.1.120",
+    "port": 554
+  }'
+```

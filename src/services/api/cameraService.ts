@@ -92,8 +92,17 @@ class CameraService {
       }
       
       // Make the request
+      const user = authService.getUser();
       console.log(`[CAMERA SERVICE] Making ${method} request to ${fullUrl}`);
-      console.log(`[CAMERA SERVICE] Headers:`, headers);
+      console.log(`[CAMERA SERVICE] User role:`, user?.role || 'Unknown');
+      console.log(`[CAMERA SERVICE] Headers:`, {
+        'Content-Type': headers['Content-Type'],
+        'Authorization': headers['Authorization'] ? `Bearer ${headers['Authorization'].split(' ')[1]?.substring(0, 10)}...` : 'None'
+      });
+      
+      if (method !== 'GET' && data) {
+        console.log(`[CAMERA SERVICE] Request body:`, JSON.stringify(data));
+      }
       
       try {
         // Add timeout to the fetch request
@@ -395,22 +404,51 @@ class CameraService {
         // Ensure we have an authentication token
         const token = authService.getToken();
         if (!token) {
+          console.error('[CAMERA SERVICE] No authentication token available for camera creation');
           return {
             success: false,
             error: 'Authentication required to create a camera'
           };
         }
 
-        // Format data for API (convert camelCase to snake_case)
+        // Check if the user has admin privileges (SuperAdmin or Admin)
+        const user = authService.getUser();
+        console.log('[CAMERA SERVICE] Current user role:', user?.role);
+        
+        if (!user || (user.role !== 'SuperAdmin' && user.role !== 'Admin')) {
+          console.error('[CAMERA SERVICE] User does not have required admin privileges');
+          return {
+            success: false,
+            error: 'You do not have permission to create cameras. Admin access required.'
+          };
+        }
+
+        // Format data for API (convert camelCase to snake_case) according to API docs
         const formattedData = {
           name: cameraData.name,
           location: cameraData.location,
           active: cameraData.active !== undefined ? cameraData.active : true,
           ip_address: cameraData.ipAddress,
-          port: typeof cameraData.port === 'string' ? parseInt(cameraData.port) : cameraData.port || 554,
+          // Per API docs, port must be a number
+          port: (() => {
+            if (cameraData.port === undefined || cameraData.port === null) {
+              return 554; // Default RTSP port if not specified
+            }
+            if (typeof cameraData.port === 'string') {
+              const parsed = parseInt(cameraData.port);
+              return isNaN(parsed) ? 554 : parsed;
+            }
+            return cameraData.port;
+          })()
         };
         
         console.log('[CAMERA SERVICE] Creating camera with formatted data:', formattedData);
+        
+        // Add direct logging of the auth token (first 10 chars only for security)
+        if (token) {
+          const tokenPreview = token.substring(0, 10) + '...';
+          console.log(`[CAMERA SERVICE] Using token for camera creation: ${tokenPreview}`);
+        }
         
         // Use direct API request
         const response = await this.directApiRequest<any>(
@@ -440,14 +478,42 @@ class CameraService {
             success: true,
             data: mappedCamera as Camera
           };
+        } else if (response.error) {
+          // Handle specific error messages from the API
+          if (response.error.toLowerCase().includes('unauthorized') || 
+              response.error.toLowerCase().includes('authentication')) {
+            console.error('[CAMERA SERVICE] Authentication error during camera creation:', response.error);
+            return {
+              success: false,
+              error: 'Authentication required. Please log in again.'
+            };
+          }
+          
+          if (response.error.toLowerCase().includes('permission') || 
+              response.error.toLowerCase().includes('forbidden')) {
+            console.error('[CAMERA SERVICE] Permission error during camera creation:', response.error);
+            return {
+              success: false,
+              error: 'You do not have permission to create cameras. Admin access required.'
+            };
+          }
+          
+          console.error('[CAMERA SERVICE] Error during camera creation:', response.error);
+          return {
+            success: false,
+            error: response.error
+          };
         }
         
-        return response;
-      } catch (error) {
-        console.error('Error creating camera:', error);
         return {
           success: false,
-          error: 'Failed to create camera'
+          error: 'Failed to create camera. Unknown error occurred.'
+        };
+      } catch (error) {
+        console.error('[CAMERA SERVICE] Exception during camera creation:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to create camera'
         };
       }
     }
